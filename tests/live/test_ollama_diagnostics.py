@@ -13,6 +13,7 @@ These use the small fixture corpus and a hashing encoder, so they need only the 
 from __future__ import annotations
 
 import json
+import os
 from typing import Any
 
 import httpx
@@ -36,6 +37,9 @@ from citeshield.retrieval.expand import Expander
 from citeshield.retrieval.hybrid import HybridSearcher
 from citeshield.retrieval.index import build_index
 from citeshield.retrieval.pipeline import Retriever
+from citeshield.verify.config import VerifierConfig
+from citeshield.verify.nli import DebertaNLI
+from citeshield.verify.verifier import Verifier
 from helpers import HashingEncoder, json_turn, text_turn, tool_turn
 
 pytestmark = pytest.mark.live
@@ -161,7 +165,12 @@ def test_repair_path(
         json_turn(bogus_draft),  # cites a chunk no tool returned -> must be rejected
     ]
     llm = _ScriptThenOllama(scripted, ollama)
-    agent = CiteShieldAgent(llm, executor, AgentConfig(agent_model=MODEL, guard_model=MODEL))
+    # The real verifier (DeBERTa NLI, offline, CPU): the repaired draft must also verify.
+    os.environ.setdefault("HF_HUB_OFFLINE", "1")
+    vcfg = VerifierConfig()
+    nli = DebertaNLI(vcfg.nli_model, revision=vcfg.nli_revision, device=vcfg.device)
+    cfg = AgentConfig(agent_model=MODEL, guard_model=MODEL)
+    agent = CiteShieldAgent(llm, executor, cfg, verifier=Verifier(executor.corpus, nli, vcfg))
     run = agent.run("Are widgets used solely for research exempt from Article 2(1)?")
 
     repair = run.llm_log[-1]

@@ -33,6 +33,7 @@ citeshield-index = "citeshield.retrieval.cli:index_main"
 citeshield-search = "citeshield.retrieval.cli:search_main"
 citeshield-eval-retrieval = "citeshield.evaluation.retrieval:main"
 citeshield-ask = "citeshield.agent.cli:main"
+citeshield-calibrate-verifier = "citeshield.evaluation.verifier_calibration:main"
 
 # CUDA wheels on the Windows dev box (local GPU indexing); CPU wheels on Linux (CI, Docker, HF Spaces).
 [tool.uv.sources]
@@ -87,7 +88,8 @@ mypy_path = "src"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 # Live tests need local services (Ollama, GPU index) and are opt-in: `pytest -m live`.
-addopts = "-q -m 'not live'"
+addopts = "-q -m 'not live and not nli'"
 markers = [
     "live: needs a running local Ollama server and the built retrieval index (opt-in)",
+    "nli: needs the downloaded NLI model weights and the processed corpus (opt-in)",
 ]

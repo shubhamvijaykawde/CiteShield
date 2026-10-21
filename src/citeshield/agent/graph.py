@@ -1,8 +1,9 @@
 """The CiteShield agent as a LangGraph state machine.
 
-    guard ──in scope──► agent ⇄ tools ──► draft ──► validate ──► finalize
-      │                   (≤ max_tool_rounds)          │  ▲
-      └──out of scope──► refuse                        └──┘ repair (≤ max_draft_attempts)
+    guard ──in scope──► agent ⇄ tools ──► draft ──► validate ──► verify ──► finalize
+      │                   (≤ max_tool_rounds)       ▲  │  ▲          │
+      └──out of scope──► refuse                     │  └──┘ repair  │
+                                                    └───────────────┘ one revision
 
 * guard     Haiku classifies the question; off-topic, advice and manipulation are refused
             before any retrieval. It fails open: the guard is a cost filter, not the
@@ -12,6 +13,9 @@
 * draft     a separate call with a JSON-schema output turns the research into an answer.
 * validate  Pydantic contract + "cites only retrieved chunks"; errors go back for one repair,
             then unsupported claims are dropped rather than shown.
+* verify    claim-level verification (citations vs corpus, verbatim quotes, NLI entailment,
+            summary/caveat sentences). Failures get at most one revision; then the refusal
+            policy (agent/policy.py) removes what failed or refuses. It never raises a status.
 """
 
 from __future__ import annotations
@@ -25,7 +29,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, StateGraph
 from pydantic import ValidationError
 
-from citeshield.agent import prompts
+from citeshield.agent import policy, prompts
 from citeshield.agent.config import AgentConfig
 from citeshield.agent.llm import LLM, LLMRefusal, LLMResponse, Usage
 from citeshield.agent.schema import draft_schema, guard_schema
@@ -33,6 +37,8 @@ from citeshield.agent.tools import EvidenceItem, ToolExecutor
 from citeshield.config import config_hash
 from citeshield.contracts.answer import AgentAnswer, AnswerStatus, RefusalReason
 from citeshield.contracts.chunk import corpus_hash
+from citeshield.contracts.verification import VerificationReport
+from citeshield.verify.verifier import Verifier
 
 Emit = Callable[[str, dict[str, Any]], None]
 
@@ -71,7 +77,10 @@ class AgentState(TypedDict, total=False):
     draft: dict[str, Any] | None
     draft_errors: list[str]
     draft_attempts: int
-    answer: AgentAnswer
+    candidate: AgentAnswer | None  # structurally valid draft awaiting verification
+    verification: VerificationReport | None
+    verify_revisions: int
+    answer: AgentAnswer  # final, only set once verification and policy have run
     usage: Usage
     timings_ms: dict[str, float]
     llm_log: list[dict[str, Any]]
@@ -92,6 +101,8 @@ class AgentRun:
     llm_log: list[dict[str, Any]] = field(default_factory=list)
     # Validation errors of each rejected draft, in order.
     draft_rejections: list[list[str]] = field(default_factory=list)
+    # Report for the draft the final answer was derived from (None: guard refusal).
+    verification: VerificationReport | None = None
 
     def cited_sources(self) -> dict[str, EvidenceItem]:
         ids = {c.chunk_id for c in self.answer.all_citations()}
@@ -99,9 +110,19 @@ class AgentRun:
 
 
 class CiteShieldAgent:
-    def __init__(self, llm: LLM, tools: ToolExecutor, cfg: AgentConfig | None = None) -> None:
+    def __init__(
+        self,
+        llm: LLM,
+        tools: ToolExecutor,
+        cfg: AgentConfig | None = None,
+        *,
+        verifier: Verifier,
+    ) -> None:
+        # The verifier is required: there is deliberately no way to build an agent that
+        # skips claim verification.
         self.llm = llm
         self.tools = tools
+        self.verifier = verifier
         self.cfg = cfg or AgentConfig()
         corpus = tools.corpus
         self.corpus_version = corpus_hash(corpus)
@@ -117,6 +138,8 @@ class CiteShieldAgent:
             "llm_provider": getattr(llm, "provider", type(llm).__name__),
             "agent_model": self.cfg.agent_model,
             "guard_model": self.cfg.guard_model,
+            "verifier_model": verifier.nli.name,
+            "verifier_thresholds": verifier.thresholds,
         }
         self.graph = self._build()
 
@@ -140,6 +163,9 @@ class CiteShieldAgent:
             "timings_ms": {},
             "llm_log": [],
             "draft_rejections": [],
+            "candidate": None,
+            "verification": None,
+            "verify_revisions": 0,
         }
         t0 = time.perf_counter()
         try:
@@ -169,6 +195,7 @@ class CiteShieldAgent:
             meta=self.meta,
             llm_log=final.get("llm_log", []),
             draft_rejections=final.get("draft_rejections", []),
+            verification=final.get("verification"),
         )
         emit("final", serialize_run(run))
         return run
@@ -183,6 +210,7 @@ class CiteShieldAgent:
         g.add_node("tools", self._tools)
         g.add_node("draft", self._draft)
         g.add_node("validate", self._validate)
+        g.add_node("verify", self._verify)
         g.add_node("finalize", self._finalize)
 
         g.add_edge(START, "guard")
@@ -191,7 +219,10 @@ class CiteShieldAgent:
         g.add_conditional_edges("tools", self._after_tools, {"agent": "agent", "draft": "draft"})
         g.add_edge("draft", "validate")
         g.add_conditional_edges(
-            "validate", self._after_validate, {"draft": "draft", "finalize": "finalize"}
+            "validate", self._after_validate, {"draft": "draft", "verify": "verify"}
+        )
+        g.add_conditional_edges(
+            "verify", self._after_verify, {"draft": "draft", "finalize": "finalize"}
         )
         g.add_edge("refuse", END)
         g.add_edge("finalize", END)
@@ -393,24 +424,63 @@ class CiteShieldAgent:
                 errors += citation_errors(answer, state["evidence"])
 
         if not errors and answer is not None:
-            return {"answer": answer, "draft_errors": []}
+            return {"candidate": answer, "draft_errors": []}
 
         _emitter(config)("draft_rejected", {"errors": errors[:10]})
         # Every attempt's errors are kept; the refusal caveat only shows the last ones.
         state["draft_rejections"].append(errors[:20])
-        if state["draft_attempts"] < self.cfg.max_draft_attempts:
+        # A verification revision does not use up the structural repair budget.
+        structural_attempts = state["draft_attempts"] - state["verify_revisions"]
+        if structural_attempts < self.cfg.max_draft_attempts:
             feedback = (
                 "Your answer was rejected. Fix these problems and return the full corrected "
                 "JSON:\n- " + "\n- ".join(errors[:20])
             )
             messages = [*state["messages"], {"role": "user", "content": feedback}]
             return {"messages": messages, "draft_errors": errors}
-        return {"answer": salvage(draft, state["evidence"], errors), "draft_errors": errors}
+        # The salvaged answer still goes through verification.
+        return {"candidate": salvage(draft, state["evidence"], errors), "draft_errors": errors}
 
-    def _after_validate(self, state: AgentState) -> Literal["draft", "finalize"]:
-        if state.get("answer") is not None:
-            return "finalize"
-        return "draft"
+    def _after_validate(self, state: AgentState) -> Literal["draft", "verify"]:
+        return "verify" if state.get("candidate") is not None else "draft"
+
+    def _verify(self, state: AgentState, config: RunnableConfig) -> AgentState:
+        candidate = state["candidate"]
+        assert candidate is not None
+        t0 = time.perf_counter()
+        report = self.verifier.verify(candidate, state["evidence"])
+        timings = state["timings_ms"]
+        timings["verify"] = timings.get("verify", 0.0) + (time.perf_counter() - t0) * 1000
+
+        min_score = self.verifier.cfg.min_retrieval_score
+        can_revise = (
+            report.failed
+            and state["verify_revisions"] < self.verifier.cfg.max_revisions
+            and not policy.weak_evidence(report, min_score)
+        )
+        if can_revise:
+            _emitter(config)(
+                "verification_failed",
+                {"failed": [{"index": c.index, "kind": c.kind, "verdict": c.verdict.value}
+                            for c in report.failed]},
+            )  # fmt: skip
+            feedback = policy.revision_feedback(report)
+            messages = [*state["messages"], {"role": "user", "content": feedback}]
+            return {
+                "messages": messages,
+                "candidate": None,
+                "verification": report,
+                "verify_revisions": state["verify_revisions"] + 1,
+                "timings_ms": timings,
+            }
+        return {
+            "answer": policy.finalize(candidate, report, min_score),
+            "verification": report,
+            "timings_ms": timings,
+        }
+
+    def _after_verify(self, state: AgentState) -> Literal["draft", "finalize"]:
+        return "finalize" if state.get("answer") is not None else "draft"
 
     def _finalize(self, state: AgentState, config: RunnableConfig) -> AgentState:
         return {}
@@ -514,6 +584,7 @@ def serialize_run(run: AgentRun) -> dict[str, Any]:
         "guard_label": run.guard_label,
         "llm_log": run.llm_log,
         "draft_rejections": run.draft_rejections,
+        "verification": run.verification.model_dump(mode="json") if run.verification else None,
         "usage": {
             "llm_calls": run.usage.calls,
             "input_tokens": run.usage.input_tokens,

@@ -33,7 +33,7 @@ from citeshield.retrieval.expand import Expander
 from citeshield.retrieval.hybrid import HybridSearcher
 from citeshield.retrieval.index import build_index
 from citeshield.retrieval.pipeline import Retriever
-from helpers import HashingEncoder
+from helpers import HashingEncoder, entail_all
 
 P2 = "32099R0001:art2:p2@oj-2099-01-01"
 
@@ -244,7 +244,9 @@ def test_full_graph_runs_through_the_ollama_adapter(executor: ToolExecutor) -> N
         )
     )
     cfg = AgentConfig(agent_model="qwen3:4b", guard_model="qwen3:4b")
-    run = CiteShieldAgent(llm, executor, cfg).run("Are research widgets exempt?")
+    run = CiteShieldAgent(llm, executor, cfg, verifier=entail_all(executor)).run(
+        "Are research widgets exempt?"
+    )
 
     assert run.answer.status is AnswerStatus.ANSWERED
     assert run.meta["llm_provider"] == "ollama"
@@ -303,7 +305,9 @@ def test_draft_truncated_by_thinking_is_rejected_then_refused(executor: ToolExec
             base_url="http://localhost:11434", transport=httpx.MockTransport(handler)
         )
     )
-    run = CiteShieldAgent(llm, executor, AgentConfig(agent_model="m", guard_model="m")).run("q?")
+    run = CiteShieldAgent(
+        llm, executor, AgentConfig(agent_model="m", guard_model="m"), verifier=entail_all(executor)
+    ).run("q?")
 
     assert run.answer.status is AnswerStatus.REFUSED
     assert len(run.draft_rejections) == 2

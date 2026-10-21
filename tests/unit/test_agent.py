@@ -25,7 +25,7 @@ from citeshield.retrieval.expand import Expander
 from citeshield.retrieval.hybrid import HybridSearcher
 from citeshield.retrieval.index import build_index
 from citeshield.retrieval.pipeline import Retriever
-from helpers import HashingEncoder, ScriptedLLM, json_turn, text_turn, tool_turn
+from helpers import HashingEncoder, ScriptedLLM, entail_all, json_turn, text_turn, tool_turn
 
 V = "@oj-2099-01-01"
 P2 = f"32099R0001:art2:p2{V}"
@@ -63,7 +63,7 @@ def run_agent(
 ) -> tuple[Any, ScriptedLLM, list[tuple[str, dict[str, Any]]]]:
     llm = ScriptedLLM(guard_label=guard, agent_turns=list(turns))
     events: list[tuple[str, dict[str, Any]]] = []
-    agent = CiteShieldAgent(llm, executor, CFG)
+    agent = CiteShieldAgent(llm, executor, CFG, verifier=entail_all(executor))
     run = agent.run("Are research widgets exempt?", emit=lambda k, p: events.append((k, p)), **kw)
     return run, llm, events
 
@@ -174,7 +174,7 @@ def test_model_refusal_becomes_a_typed_refusal(executor: ToolExecutor) -> None:
                 raise LLMRefusal("declined")
             return super().chat(**kwargs)
 
-    agent = CiteShieldAgent(RefusingLLM(), executor, CFG)
+    agent = CiteShieldAgent(RefusingLLM(), executor, CFG, verifier=entail_all(executor))
     run = agent.run("Are research widgets exempt?")
     assert run.answer.status is AnswerStatus.REFUSED
 
@@ -233,7 +233,7 @@ def test_api_streams_events(executor: ToolExecutor) -> None:
     llm = ScriptedLLM(
         agent_turns=[tool_turn(READ_P2), text_turn("ok"), json_turn(draft((P2, QUOTE)))]
     )
-    app = create_app(lambda: CiteShieldAgent(llm, executor, CFG))
+    app = create_app(lambda: CiteShieldAgent(llm, executor, CFG, verifier=entail_all(executor)))
     with TestClient(app) as client:
         resp = client.post("/ask", json={"question": "Are research widgets exempt?"})
         assert resp.status_code == 200
@@ -251,7 +251,9 @@ def test_api_streams_events(executor: ToolExecutor) -> None:
 
 
 def test_api_reports_agent_errors(executor: ToolExecutor) -> None:
-    app = create_app(lambda: CiteShieldAgent(ScriptedLLM(), executor, CFG))  # no agent turns
+    app = create_app(
+        lambda: CiteShieldAgent(ScriptedLLM(), executor, CFG, verifier=entail_all(executor))
+    )  # no agent turns
     with TestClient(app) as client:
         events = _events(client.post("/ask", json={"question": "Are widgets exempt?"}).text)
     assert events[-1][0] == "error"

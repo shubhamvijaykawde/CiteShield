@@ -1,0 +1,60 @@
+{"id": "v01", "chunk_id": "32016R0679:art33:p1@oj-2016-05-04", "claim": "A controller must notify a personal data breach to the competent supervisory authority, where feasible within 72 hours of becoming aware of it.", "label": "supported"}
+{"id": "v02", "chunk_id": "32016R0679:art33:p1@oj-2016-05-04", "claim": "A controller has 7 days to notify a personal data breach to the supervisory authority.", "label": "contradicted"}
+{"id": "v03", "chunk_id": "32016R0679:art33:p1@oj-2016-05-04", "claim": "The controller must notify every affected data subject within 72 hours.", "label": "unsupported"}
+{"id": "v04", "chunk_id": "32016R0679:art33:p1@oj-2016-05-04", "claim": "If the notification is made after 72 hours, the controller must give reasons for the delay.", "label": "supported"}
+{"id": "v05", "chunk_id": "32016R0679:art34:p1@oj-2016-05-04", "claim": "When a breach is likely to result in a high risk to individuals, the controller must inform the data subjects without undue delay.", "label": "supported"}
+{"id": "v06", "chunk_id": "32016R0679:art34:p1@oj-2016-05-04", "claim": "The controller must pay compensation to every data subject affected by a breach.", "label": "unsupported"}
+{"id": "v07", "chunk_id": "32016R0679:art22:p1@oj-2016-05-04", "claim": "Data subjects have the right not to be subject to decisions based solely on automated processing that produce legal effects concerning them.", "label": "supported"}
+{"id": "v08", "chunk_id": "32016R0679:art22:p1@oj-2016-05-04", "claim": "Solely automated decisions are allowed whenever the data subject has given explicit consent.", "label": "unsupported"}
+{"id": "v09", "chunk_id": "32016R0679:art7:p3@oj-2016-05-04", "claim": "A data subject may withdraw consent at any time.", "label": "supported"}
+{"id": "v10", "chunk_id": "32016R0679:art7:p3@oj-2016-05-04", "claim": "Withdrawing consent must be as easy as giving it.", "label": "supported"}
+{"id": "v11", "chunk_id": "32016R0679:art7:p3@oj-2016-05-04", "claim": "Withdrawing consent makes all earlier processing based on that consent unlawful.", "label": "contradicted"}
+{"id": "v12", "chunk_id": "32016R0679:art17:p1@oj-2016-05-04", "claim": "A data subject can obtain the erasure of personal data that are no longer necessary for the purposes for which they were collected.", "label": "supported"}
+{"id": "v13", "chunk_id": "32016R0679:art17:p1@oj-2016-05-04", "claim": "Controllers must erase personal data within 30 days of receiving a request.", "label": "unsupported"}
+{"id": "v14", "chunk_id": "32016R0679:art37:p1@oj-2016-05-04", "claim": "A public authority that processes personal data must designate a data protection officer.", "label": "supported"}
+{"id": "v15", "chunk_id": "32016R0679:art37:p1@oj-2016-05-04", "claim": "Every company with more than 250 employees must appoint a data protection officer.", "label": "unsupported"}
+{"id": "v16", "chunk_id": "32016R0679:art12:p3@oj-2016-05-04", "claim": "The controller must respond to a data subject's request within one month of receiving it.", "label": "supported"}
+{"id": "v17", "chunk_id": "32016R0679:art12:p3@oj-2016-05-04", "claim": "The one-month period for responding can be extended by two further months where necessary.", "label": "supported"}
+{"id": "v18", "chunk_id": "32016R0679:art12:p3@oj-2016-05-04", "claim": "The period for responding to a request can be extended by six further months.", "label": "contradicted"}
+{"id": "v19", "chunk_id": "32016R0679:art20:p1@oj-2016-05-04", "claim": "Data subjects can receive the personal data they provided in a structured, commonly used and machine-readable format.", "label": "supported"}
+{"id": "v20", "chunk_id": "32016R0679:art20:p1@oj-2016-05-04", "claim": "The right to data portability covers processing that is not carried out by automated means.", "label": "contradicted"}
+{"id": "v21", "chunk_id": "32016R0679:art9:p1@oj-2016-05-04", "claim": "Processing of data concerning health is prohibited as a general rule.", "label": "supported"}
+{"id": "v22", "chunk_id": "32016R0679:art9:p1@oj-2016-05-04", "claim": "Processing of health data is allowed when the data subject has given explicit consent.", "label": "unsupported"}
+{"id": "v23", "chunk_id": "32016R0679:art4:pt5@oj-2016-05-04", "claim": "Pseudonymised personal data can no longer be attributed to a specific data subject without the use of additional information.", "label": "supported"}
+{"id": "v24", "chunk_id": "32016R0679:art4:pt5@oj-2016-05-04", "claim": "Pseudonymised data must be deleted after five years.", "label": "unsupported"}
+{"id": "v25", "chunk_id": "32024R1689:art5:p1:ptf@oj-2024-07-12", "claim": "Using AI systems to infer the emotions of people in the workplace is prohibited, except for medical or safety reasons.", "label": "supported"}
+{"id": "v26", "chunk_id": "32024R1689:art5:p1:ptf@oj-2024-07-12", "claim": "Using AI systems to infer the emotions of employees at work is always permitted.", "label": "contradicted"}
+{"id": "v27", "chunk_id": "32024R1689:art5:p1:ptf@oj-2024-07-12", "claim": "AI systems that infer emotions of shoppers in shopping malls are prohibited.", "label": "unsupported"}
+{"id": "v28", "chunk_id": "32024R1689:art6:p2@oj-2024-07-12", "claim": "AI systems referred to in Annex III are considered to be high-risk.", "label": "supported"}
+{"id": "v29", "chunk_id": "32024R1689:art6:p3@oj-2024-07-12", "claim": "An AI system listed in Annex III that only performs a narrow procedural task can fall outside the high-risk category.", "label": "supported"}
+{"id": "v30", "chunk_id": "32024R1689:art6:p3@oj-2024-07-12", "claim": "Every AI system listed in Annex III is high-risk without any exception.", "label": "contradicted"}
+{"id": "v31", "chunk_id": "32024R1689:art50:p1@oj-2024-07-12", "claim": "Providers must ensure that people are informed that they are interacting with an AI system, unless this is obvious.", "label": "supported"}
+{"id": "v32", "chunk_id": "32024R1689:art50:p1@oj-2024-07-12", "claim": "Chatbots must display a visible watermark on every message they send.", "label": "unsupported"}
+{"id": "v33", "chunk_id": "32024R1689:art50:p4@oj-2024-07-12", "claim": "Deployers of AI systems that generate deep fakes must disclose that the content has been artificially generated or manipulated.", "label": "supported"}
+{"id": "v34", "chunk_id": "32024R1689:art50:p4@oj-2024-07-12", "claim": "Providers must register deep fake generators with the AI Office before use.", "label": "unsupported"}
+{"id": "v35", "chunk_id": "32024R1689:art86:p1@oj-2024-07-12", "claim": "An affected person can obtain from the deployer clear and meaningful explanations of the role of a high-risk AI system in a decision about them.", "label": "supported"}
+{"id": "v36", "chunk_id": "32024R1689:art86:p1@oj-2024-07-12", "claim": "An affected person can demand a copy of the AI system's source code.", "label": "unsupported"}
+{"id": "v37", "chunk_id": "32024R1689:art99:p3@oj-2024-07-12", "claim": "Engaging in prohibited AI practices can lead to fines of up to EUR 35 million or 7% of worldwide annual turnover, whichever is higher.", "label": "supported"}
+{"id": "v38", "chunk_id": "32024R1689:art99:p3@oj-2024-07-12", "claim": "The maximum fine for prohibited AI practices is EUR 20 million.", "label": "contradicted"}
+{"id": "v39", "chunk_id": "32024R1689:art4@oj-2024-07-12", "claim": "Providers and deployers of AI systems must take measures to ensure a sufficient level of AI literacy of their staff.", "label": "supported"}
+{"id": "v40", "chunk_id": "32024R1689:art4@oj-2024-07-12", "claim": "Staff using AI systems must complete a certified 40-hour training course.", "label": "unsupported"}
+{"id": "v41", "chunk_id": "32024R1689:art27:p4@oj-2024-07-12", "claim": "Where a data protection impact assessment already meets some of the obligations, the fundamental rights impact assessment complements it.", "label": "supported"}
+{"id": "v42", "chunk_id": "32024R1689:art113@oj-2024-07-12", "claim": "Chapters I and II of the AI Act apply from 2 February 2025.", "label": "supported"}
+{"id": "v43", "chunk_id": "32024R1689:art113@oj-2024-07-12", "claim": "Chapters I and II of the AI Act apply only from 2 August 2027.", "label": "contradicted"}
+{"id": "v44", "chunk_id": "32022R2065:art16:p1@oj-2022-10-27", "claim": "Hosting providers must allow any individual or entity to notify them of content they consider to be illegal.", "label": "supported"}
+{"id": "v45", "chunk_id": "32022R2065:art16:p1@oj-2022-10-27", "claim": "Hosting providers must remove notified content within 24 hours.", "label": "unsupported"}
+{"id": "v46", "chunk_id": "32022R2065:art33:p1@oj-2022-10-27", "claim": "The rules for very large online platforms apply to platforms with at least 45 million average monthly active recipients in the Union.", "label": "supported"}
+{"id": "v47", "chunk_id": "32022R2065:art33:p1@oj-2022-10-27", "claim": "The very large online platform threshold is 10 million average monthly active recipients.", "label": "contradicted"}
+{"id": "v48", "chunk_id": "32022R2065:art26:p3@oj-2022-10-27", "claim": "Online platforms may not present advertisements based on profiling that uses special categories of personal data.", "label": "supported"}
+{"id": "v49", "chunk_id": "32022R2065:art28:p2@oj-2022-10-27", "claim": "Online platforms may not present profiling-based advertisements to users they know with reasonable certainty to be minors.", "label": "supported"}
+{"id": "v50", "chunk_id": "32022R2065:art28:p2@oj-2022-10-27", "claim": "Online platforms may present profiling-based advertisements to users they know to be minors.", "label": "contradicted"}
+{"id": "v51", "chunk_id": "32022R2065:art25:p1@oj-2022-10-27", "claim": "Online platforms must not design their interfaces in a way that deceives or manipulates the recipients of their service.", "label": "supported"}
+{"id": "v52", "chunk_id": "32022R2065:art25:p1@oj-2022-10-27", "claim": "Online platforms must publish their interface designs for public review.", "label": "unsupported"}
+{"id": "v53", "chunk_id": "32022L2555:art23:p4@oj-2022-12-27", "claim": "Entities must submit an early warning within 24 hours of becoming aware of a significant incident.", "label": "supported"}
+{"id": "v54", "chunk_id": "32022L2555:art23:p4@oj-2022-12-27", "claim": "The early warning for a significant incident is due within one week.", "label": "contradicted"}
+{"id": "v55", "chunk_id": "32022L2555:art20:p1@oj-2022-12-27", "claim": "Management bodies of essential and important entities must approve the cybersecurity risk-management measures taken by those entities.", "label": "supported"}
+{"id": "v56", "chunk_id": "32022L2555:art20:p1@oj-2022-12-27", "claim": "Members of management bodies must personally carry out annual penetration tests.", "label": "unsupported"}
+{"id": "v57", "chunk_id": "32023R2854:art4:p1@oj-2023-12-22", "claim": "Where users cannot access data directly, data holders must make readily available data accessible to the user free of charge.", "label": "supported"}
+{"id": "v58", "chunk_id": "32023R2854:art4:p1@oj-2023-12-22", "claim": "Data holders may charge users a fee for making readily available data accessible to them.", "label": "contradicted"}
+{"id": "v59", "chunk_id": "32023R2854:art3:p1@oj-2023-12-22", "claim": "Connected products must be designed so that product data are directly accessible to the user by default, where relevant and technically feasible.", "label": "supported"}
+{"id": "v60", "chunk_id": "32023R2854:art3:p1@oj-2023-12-22", "claim": "Connected products must store all product data on servers located in the Union.", "label": "unsupported"}

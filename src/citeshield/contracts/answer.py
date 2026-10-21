@@ -25,6 +25,14 @@ class RefusalReason(StrEnum):
     LEGAL_ADVICE_REQUEST = "legal_advice_request"
     CONFLICTING_SOURCES = "conflicting_sources"
     INJECTION_DETECTED = "injection_detected"
+    # Set only by the verifier (milestone 5), never offered to the drafting model.
+    INVALID_CITATIONS = "invalid_citations"
+    UNSUPPORTED_CLAIMS = "unsupported_claims"
+
+
+VERIFIER_ONLY_REASONS = frozenset(
+    {RefusalReason.INVALID_CITATIONS, RefusalReason.UNSUPPORTED_CLAIMS}
+)
 
 
 class Citation(BaseModel):

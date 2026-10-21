@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Any
 
-from citeshield.contracts.answer import AnswerStatus, RefusalReason
+from citeshield.contracts.answer import VERIFIER_ONLY_REASONS, AnswerStatus, RefusalReason
 
 GUARD_LABELS = ("in_scope", "other_law", "legal_advice", "not_legal", "manipulation")
 
@@ -58,7 +58,10 @@ def draft_schema(evidence_ids: Iterable[str] = ()) -> dict[str, Any]:
             },
             "refusal_reason": {
                 "anyOf": [
-                    {"type": "string", "enum": [r.value for r in RefusalReason]},
+                    {
+                        "type": "string",
+                        "enum": [r.value for r in RefusalReason if r not in VERIFIER_ONLY_REASONS],
+                    },
                     {"type": "null"},
                 ]
             },

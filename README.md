@@ -12,8 +12,8 @@ texts (GDPR, AI Act, DSA, NIS2, Data Act) and refuses when the evidence is thin.
 | 1. Scaffold, config, data contracts, CI | done |
 | 2. Ingestion with data contract and quarantine | done |
 | 3. Hybrid retrieval + reranker | done |
-| 4. LangGraph agent + FastAPI streaming | built and tested offline; live run pending |
-| 5. Claim-level verifier + refusal policy | next |
+| 4. LangGraph agent + FastAPI streaming (Claude or local Ollama) | done; live-tested on Ollama qwen3:4b |
+| 5. Claim-level verifier + refusal policy | done (thresholds provisional, see below) |
 | 6–9. Evals, red-team, observability, delivery | planned |
 
 ## Quickstart
@@ -64,6 +64,38 @@ guard ──in scope──► agent ⇄ tools ──► draft ──► validate
   Sonnet calls use the server-side refusal fallback (`fallbacks: "default"`).
 - **Logged with each run**: prompt versions (content hashes), the agent, retriever and corpus
   hashes, token usage and estimated cost.
+
+## Verification and refusal policy
+
+Every drafted answer is verified before anyone sees it (`src/citeshield/verify/`):
+
+1. **Citations** are checked against the canonical corpus and this run's evidence:
+   `fabricated` (no such id), `version_mismatch` (same provision, other `@version`),
+   `non_citable` (e.g. an untrusted source), `not_retrieved` (no tool returned it).
+2. **Quotes** must match the canonical text after deterministic normalisation (NFKC,
+   typographic quotes/dashes, whitespace, case). Near misses are reported, never accepted.
+3. **Entailment**: a matching quote only proves the passage exists. Each claim must be
+   entailed by its cited text according to a local NLI model
+   (`MoritzLaurer/DeBERTa-v3-large-mnli-fever-anli-ling-wanli`, MIT, CPU by default).
+   Verdicts: supported, unsupported, contradicted, conflicting, citation_invalid.
+4. **Summary and caveats** are split into sentences; only sentences entailed by the verified
+   claims or their sources are kept. Disclaimers are added by code.
+
+Failures get one revision with per-claim reasons. After that `agent/policy.py` removes what
+failed (answer becomes `partial`) or refuses with a specific reason
+(`invalid_citations`, `unsupported_claims`, `conflicting_sources`, `insufficient_evidence`
+when the best retrieval score is below 0.30). Verification can only lower a status. The
+verifier is a required constructor argument: no agent can be built without it. The full
+`VerificationReport` is returned in the final SSE event.
+
+Thresholds come from `uv run citeshield-calibrate-verifier` on 60 hand-labelled pairs
+(`eval/verification/claims.jsonl`, stratified calibration/held-out split); see
+[eval/results/verifier_calibration.md](eval/results/verifier_calibration.md). The model
+separates that set with a wide margin, so the data shows reliability on clear-cut claims but
+does not pin the thresholds down; they are provisional until milestone 6.
+
+Opt-in test suites: `pytest -m nli tests/nli` (real model) and `pytest -m live tests/live`
+(Ollama).
 
 ## Ingestion and the data contract
 

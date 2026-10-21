@@ -14,6 +14,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from citeshield.agent.config import AgentConfig, LLMSettings
 from citeshield.retrieval.config import RetrieverConfig
+from citeshield.verify.config import VerifierConfig
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -48,6 +49,7 @@ class Settings(BaseSettings):
     retriever: RetrieverConfig = RetrieverConfig()
     agent: AgentConfig = AgentConfig()
     llm: LLMSettings = LLMSettings()
+    verifier: VerifierConfig = VerifierConfig()
 
     @property
     def raw_dir(self) -> Path:

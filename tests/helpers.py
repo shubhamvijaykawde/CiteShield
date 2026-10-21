@@ -20,6 +20,7 @@ from citeshield.contracts.chunk import (
     make_chunk_id,
     sha256_text,
 )
+from citeshield.contracts.verification import Entailment
 from citeshield.retrieval.embed import EncodedText
 
 DIM = 64
@@ -118,3 +119,64 @@ class ScriptedLLM:
         if not self.agent_turns:
             raise AssertionError("ScriptedLLM ran out of agent turns")
         return self.agent_turns.pop(0)
+
+
+class EntailAllNLI:
+    """Stand-in NLI that entails every pair.
+
+    For tests of graph mechanics that predate verification: the deterministic citation and
+    quote checks still run for real; only the entailment model is replaced.
+    """
+
+    name = "test/entail-all"
+    max_tokens = 512
+
+    def count_tokens(self, text: str) -> int:
+        return len(text.split())
+
+    def score(self, pairs: Any) -> list[Entailment]:
+        return [Entailment(entailment=1.0, neutral=0.0, contradiction=0.0) for _ in pairs]
+
+
+class RuleNLI:
+    """Deterministic NLI double driven by substring rules on the hypothesis.
+
+    ``rules`` maps a substring of the hypothesis to (entail, neutral, contradict); the first
+    rule whose key appears wins. Pairs whose premise contains ``contradicting_premise`` get
+    the contradiction override instead (to model a source that disagrees).
+    """
+
+    name = "test/rules"
+    max_tokens = 512
+
+    def __init__(
+        self,
+        rules: dict[str, tuple[float, float, float]],
+        default: tuple[float, float, float] = (0.05, 0.9, 0.05),
+        contradicting_premise: str | None = None,
+    ) -> None:
+        self.rules = rules
+        self.default = default
+        self.contradicting_premise = contradicting_premise
+        self.pairs: list[tuple[str, str]] = []
+
+    def count_tokens(self, text: str) -> int:
+        return len(text.split())
+
+    def score(self, pairs: Any) -> list[Entailment]:
+        out = []
+        for premise, hypothesis in pairs:
+            self.pairs.append((premise, hypothesis))
+            probs = next((v for k, v in self.rules.items() if k in hypothesis), self.default)
+            if self.contradicting_premise and self.contradicting_premise in premise:
+                probs = (0.02, 0.03, 0.95)
+            e, n, c = probs
+            out.append(Entailment(entailment=e, neutral=n, contradiction=c))
+        return out
+
+
+def entail_all(executor: Any) -> Any:
+    """A real Verifier over the executor's corpus with the entail-all NLI stand-in."""
+    from citeshield.verify.verifier import Verifier
+
+    return Verifier(executor.corpus, EntailAllNLI())

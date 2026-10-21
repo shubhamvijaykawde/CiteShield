@@ -7,7 +7,9 @@ from citeshield.agent.graph import CiteShieldAgent
 from citeshield.agent.llm import LLM, AnthropicLLM
 from citeshield.agent.tools import ToolExecutor
 from citeshield.config import Settings
+from citeshield.retrieval.corpus import Corpus
 from citeshield.retrieval.pipeline import Retriever
+from citeshield.verify.verifier import Verifier
 
 
 def build_llm(settings: Settings) -> tuple[LLM, AgentConfig]:
@@ -36,8 +38,19 @@ def build_llm(settings: Settings) -> tuple[LLM, AgentConfig]:
     raise ValueError(f"unknown LLM provider {llm.provider!r}")
 
 
+def build_verifier(settings: Settings, corpus: Corpus) -> Verifier:
+    from citeshield.verify.nli import DebertaNLI
+
+    cfg = settings.verifier
+    nli = DebertaNLI(
+        cfg.nli_model, revision=cfg.nli_revision, device=cfg.device, batch_size=cfg.batch_size
+    )
+    return Verifier(corpus, nli, cfg)
+
+
 def build_agent(settings: Settings | None = None) -> CiteShieldAgent:
     settings = settings or Settings()
     llm, cfg = build_llm(settings)
     retriever = Retriever.from_settings(settings)
-    return CiteShieldAgent(llm, ToolExecutor(retriever), cfg)
+    tools = ToolExecutor(retriever)
+    return CiteShieldAgent(llm, tools, cfg, verifier=build_verifier(settings, tools.corpus))
