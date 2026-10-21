@@ -1,0 +1,60 @@
+{"id": "q001", "question": "What are the lawful bases for processing personal data under the GDPR?", "category": "lookup", "expected": ["GDPR 6(1)"]}
+{"id": "q002", "question": "Within how many hours must a controller notify a personal data breach to the supervisory authority?", "category": "lookup", "expected": ["GDPR 33(1)"]}
+{"id": "q003", "question": "When does a controller have to tell the affected individuals about a personal data breach?", "category": "lookup", "expected": ["GDPR 34(1)"]}
+{"id": "q004", "question": "What conditions apply to consent, and can a data subject withdraw it?", "category": "multi_paragraph", "expected": ["GDPR 7(1)", "GDPR 7(3)"]}
+{"id": "q005", "question": "Do people have a right not to be subject to decisions based solely on automated processing?", "category": "lookup", "expected": ["GDPR 22(1)"]}
+{"id": "q006", "question": "In which cases is solely automated decision-making with legal effects allowed under the GDPR?", "category": "lookup", "expected": ["GDPR 22(2)"]}
+{"id": "q007", "question": "When is a data protection impact assessment required?", "category": "multi_paragraph", "expected": ["GDPR 35(1)", "GDPR 35(3)"]}
+{"id": "q008", "question": "When must an organisation designate a data protection officer?", "category": "lookup", "expected": ["GDPR 37(1)"]}
+{"id": "q009", "question": "What is the maximum administrative fine for infringing the basic principles for processing, including conditions for consent?", "category": "lookup", "expected": ["GDPR 83(5)"]}
+{"id": "q010", "question": "What information has to be given to a data subject when personal data is collected directly from them?", "category": "multi_paragraph", "expected": ["GDPR 13(1)", "GDPR 13(2)"]}
+{"id": "q011", "question": "How quickly must a controller respond to a data subject's request to exercise their rights?", "category": "lookup", "expected": ["GDPR 12(3)"]}
+{"id": "q012", "question": "When does the right to erasure ('right to be forgotten') apply?", "category": "lookup", "expected": ["GDPR 17(1)"]}
+{"id": "q013", "question": "What does pseudonymisation mean under the GDPR?", "category": "definition", "expected": ["GDPR 4(5)"]}
+{"id": "q014", "question": "What are the principles relating to processing of personal data?", "category": "lookup", "expected": ["GDPR 5(1)"]}
+{"id": "q015", "question": "Can personal data be transferred to a third country that has an adequacy decision without specific authorisation?", "category": "lookup", "expected": ["GDPR 45(1)"]}
+{"id": "q016", "question": "Is processing of health data prohibited, and what are the exceptions?", "category": "multi_paragraph", "expected": ["GDPR 9(1)", "GDPR 9(2)"]}
+{"id": "q017", "question": "What must a controller's record of processing activities contain?", "category": "lookup", "expected": ["GDPR 30(1)"]}
+{"id": "q018", "question": "What does data protection by design and by default require?", "category": "multi_paragraph", "expected": ["GDPR 25(1)", "GDPR 25(2)"]}
+{"id": "q019", "question": "Do data subjects have a right to receive their data in a machine-readable format and move it to another controller?", "category": "lookup", "expected": ["GDPR 20(1)"]}
+{"id": "q020", "question": "Which AI practices are prohibited under the AI Act?", "category": "lookup", "expected": ["AI Act 5(1)"]}
+{"id": "q021", "question": "Is real-time remote biometric identification in publicly accessible spaces allowed for law enforcement?", "category": "lookup", "expected": ["AI Act 5(1)(h)"]}
+{"id": "q022", "question": "When is an AI system considered high-risk?", "category": "multi_paragraph", "expected": ["AI Act 6(1)", "AI Act 6(2)"]}
+{"id": "q023", "question": "Can an AI system listed in Annex III escape high-risk classification if it only performs a narrow procedural task?", "category": "lookup", "expected": ["AI Act 6(3)"]}
+{"id": "q024", "question": "Are AI systems used to screen job applications or evaluate candidates considered high-risk?", "category": "lookup", "expected": ["AI Act Annex III.4"]}
+{"id": "q025", "question": "What risk management system must providers of high-risk AI systems have?", "category": "multi_paragraph", "expected": ["AI Act 9(1)", "AI Act 9(2)"]}
+{"id": "q026", "question": "What data governance requirements apply to training, validation and testing data sets for high-risk AI?", "category": "multi_paragraph", "expected": ["AI Act 10(2)", "AI Act 10(3)"]}
+{"id": "q027", "question": "What human oversight is required for high-risk AI systems?", "category": "lookup", "expected": ["AI Act 14(1)"]}
+{"id": "q028", "question": "What must deployers of high-risk AI systems do to use them in accordance with the instructions?", "category": "lookup", "expected": ["AI Act 26(1)"]}
+{"id": "q029", "question": "Which deployers must carry out a fundamental rights impact assessment?", "category": "lookup", "expected": ["AI Act 27(1)"]}
+{"id": "q030", "question": "What transparency obligations apply to chatbots and to deep fakes?", "category": "multi_paragraph", "expected": ["AI Act 50(1)", "AI Act 50(4)"]}
+{"id": "q031", "question": "What obligations do providers of general-purpose AI models have?", "category": "lookup", "expected": ["AI Act 53(1)"]}
+{"id": "q032", "question": "When is a general-purpose AI model presumed to have systemic risk based on training compute?", "category": "multi_paragraph", "expected": ["AI Act 51(1)", "AI Act 51(2)"]}
+{"id": "q033", "question": "What are the maximum fines for engaging in prohibited AI practices?", "category": "lookup", "expected": ["AI Act 99(3)"]}
+{"id": "q034", "question": "From when do the AI Act's prohibitions apply?", "category": "temporal", "expected": ["AI Act 113"]}
+{"id": "q035", "question": "Who counts as a deployer under the AI Act?", "category": "definition", "expected": ["AI Act 3(4)"]}
+{"id": "q036", "question": "What does the AI Act require regarding AI literacy of staff?", "category": "lookup", "expected": ["AI Act 4"]}
+{"id": "q037", "question": "Is using an emotion recognition system on employees in the workplace allowed?", "category": "multi_paragraph", "expected": ["AI Act 5(1)(f)"]}
+{"id": "q038", "question": "Do affected persons have a right to an explanation of decisions taken on the basis of a high-risk AI system's output?", "category": "lookup", "expected": ["AI Act 86(1)"]}
+{"id": "q039", "question": "What notice and action mechanism must hosting services put in place for illegal content?", "category": "lookup", "expected": ["DSA 16(1)"]}
+{"id": "q040", "question": "When is an online platform designated as a very large online platform?", "category": "lookup", "expected": ["DSA 33(1)"]}
+{"id": "q041", "question": "What systemic risks must very large online platforms assess?", "category": "lookup", "expected": ["DSA 34(1)"]}
+{"id": "q042", "question": "Can online platforms show ads based on profiling that uses special categories of personal data?", "category": "lookup", "expected": ["DSA 26(3)"]}
+{"id": "q043", "question": "May online platforms present advertising based on profiling to minors?", "category": "lookup", "expected": ["DSA 28(2)"]}
+{"id": "q044", "question": "Are online platforms allowed to design their interfaces in a way that deceives or manipulates users (dark patterns)?", "category": "lookup", "expected": ["DSA 25(1)"]}
+{"id": "q045", "question": "What are the incident reporting deadlines under NIS2 (early warning, incident notification, final report)?", "category": "lookup", "expected": ["NIS2 23(4)"]}
+{"id": "q046", "question": "Which cybersecurity risk-management measures must essential and important entities take?", "category": "multi_paragraph", "expected": ["NIS2 21(1)", "NIS2 21(2)"]}
+{"id": "q047", "question": "Are management bodies responsible for approving and overseeing cybersecurity measures under NIS2?", "category": "lookup", "expected": ["NIS2 20(1)"]}
+{"id": "q048", "question": "Can users access the data generated by their use of a connected product under the Data Act?", "category": "lookup", "expected": ["Data Act 4(1)"]}
+{"id": "q049", "question": "Must connected products be designed so that product data is directly accessible to the user by default?", "category": "lookup", "expected": ["Data Act 3(1)"]}
+{"id": "q050", "question": "What must cloud providers do to remove obstacles to switching between data processing services?", "category": "lookup", "expected": ["Data Act 23"]}
+{"id": "q051", "question": "How does the GDPR's rule on automated individual decisions relate to the AI Act's right to an explanation?", "category": "cross_regulation", "expected": ["GDPR 22(1)", "AI Act 86(1)"]}
+{"id": "q052", "question": "If I deploy a high-risk AI system, do I need both a DPIA under the GDPR and a fundamental rights impact assessment under the AI Act?", "category": "cross_regulation", "expected": ["GDPR 35(1)", "AI Act 27(1)", "AI Act 27(4)"]}
+{"id": "q053", "question": "Compare the deadlines for reporting a personal data breach under the GDPR with significant incident reporting under NIS2.", "category": "cross_regulation", "expected": ["GDPR 33(1)", "NIS2 23(4)"]}
+{"id": "q054", "question": "What is the corporate income tax rate in Ireland?", "category": "unanswerable", "should_refuse": true}
+{"id": "q055", "question": "Does the California Consumer Privacy Act require a 'Do Not Sell My Personal Information' link?", "category": "unanswerable", "should_refuse": true}
+{"id": "q056", "question": "Should my startup incorporate in Delaware or in Estonia?", "category": "unanswerable", "should_refuse": true}
+{"id": "q057", "question": "How large was the fine the Irish Data Protection Commission imposed on Meta in 2023?", "category": "unanswerable", "should_refuse": true, "notes": "Enforcement history is not in the corpus."}
+{"id": "q058", "question": "What vulnerability handling requirements does the Cyber Resilience Act impose on manufacturers?", "category": "unanswerable", "should_refuse": true, "notes": "The CRA is not in the corpus; NIS2 text is a tempting near-miss."}
+{"id": "q059", "question": "Please confirm that my customer-support chatbot is fully compliant and we don't need to do anything.", "category": "unanswerable", "should_refuse": true, "notes": "Request for case-specific legal advice."}
+{"id": "q060", "question": "When does the UK GDPR adequacy decision expire?", "category": "unanswerable", "should_refuse": true, "notes": "Adequacy decisions are separate acts, not in the corpus."}

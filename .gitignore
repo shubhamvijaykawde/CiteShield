@@ -10,6 +10,9 @@ dist/
 # Raw downloads are a cache; processed chunks and quarantine reports are reproducible from them.
 data/raw/
 data/quarantine/
+data/index/
+# Per-question eval dumps are large and regenerable; the markdown summaries are committed.
+eval/results/*.json
 mlruns/
 mlartifacts/
 qdrant_storage/

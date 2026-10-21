@@ -7,7 +7,6 @@ partially broken corpus can never reach the index. The report is always written.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import sys
 from collections import Counter
@@ -15,19 +14,12 @@ from datetime import UTC, datetime
 from typing import Any
 
 from citeshield.config import Settings, config_hash
-from citeshield.contracts.chunk import ChunkRecord
+from citeshield.contracts.chunk import ChunkRecord, corpus_hash
 from citeshield.ingest.fetch import fetch_xhtml
 from citeshield.ingest.manifest import load_manifest
 from citeshield.ingest.parse_xhtml import parse_document
 from citeshield.ingest.quarantine import reason_counts, write_quarantine
 from citeshield.ingest.validate import validate_document
-
-
-def corpus_hash(chunks: list[ChunkRecord]) -> str:
-    h = hashlib.sha256()
-    for c in sorted(chunks, key=lambda c: c.chunk_id):
-        h.update(f"{c.chunk_id}\t{c.content_sha256}\n".encode())
-    return h.hexdigest()[:16]
 
 
 def main(argv: list[str] | None = None) -> int:

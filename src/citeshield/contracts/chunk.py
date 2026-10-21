@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from collections.abc import Iterable
 from datetime import date
 from enum import StrEnum
 from typing import Literal, Self
@@ -41,6 +42,14 @@ def estimate_tokens(text: str) -> int:
     Close enough to BPE counts for chunk sizing; exact counts are not part of the contract.
     """
     return len(_TOKEN_RE.findall(text))
+
+
+def corpus_hash(chunks: Iterable[ChunkRecord]) -> str:
+    """Order-independent fingerprint of a corpus; indexes and eval baselines are keyed by it."""
+    h = hashlib.sha256()
+    for c in sorted(chunks, key=lambda c: c.chunk_id):
+        h.update(f"{c.chunk_id}\t{c.content_sha256}\n".encode())
+    return h.hexdigest()[:16]
 
 
 def make_chunk_id(

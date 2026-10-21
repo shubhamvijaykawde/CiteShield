@@ -11,10 +11,40 @@ dependencies = [
     "httpx>=0.27",
     "lxml>=5.3",
     "pyyaml>=6.0",
+    "qdrant-client>=1.12",
+    "numpy>=1.26",
+]
+
+[project.optional-dependencies]
+# Model inference. Kept optional so lint/unit CI does not pull torch.
+ml = [
+    "torch>=2.6",
+    "transformers>=4.46",
+    "huggingface-hub>=0.25",
 ]
 
 [project.scripts]
 citeshield-ingest = "citeshield.ingest.run:main"
+citeshield-index = "citeshield.retrieval.cli:index_main"
+citeshield-search = "citeshield.retrieval.cli:search_main"
+citeshield-eval-retrieval = "citeshield.evaluation.retrieval:main"
+
+# CUDA wheels on the Windows dev box (local GPU indexing); CPU wheels on Linux (CI, Docker, HF Spaces).
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cu128", marker = "sys_platform == 'win32'" },
+    { index = "pytorch-cpu", marker = "sys_platform == 'linux'" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 [dependency-groups]
 dev = [
@@ -40,6 +70,8 @@ src = ["src", "tests"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM", "RUF", "S"]
 ignore = ["S101"]  # assert is fine in tests
+# The Official Journal uses typographic quotes; parsers and tests must match them literally.
+allowed-confusables = ["‘", "’", "›"]
 
 [tool.mypy]
 python_version = "3.12"

@@ -12,6 +12,8 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from citeshield.retrieval.config import RetrieverConfig
+
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -33,7 +35,11 @@ class Settings(BaseSettings):
     agent_model: str = "claude-sonnet-5-5"
     fast_model: str = "claude-haiku-5-5"
 
+    # Qdrant server URL; when unset an embedded on-disk instance under data/index is used.
+    qdrant_url: str | None = None
+
     ingest: IngestConfig = IngestConfig()
+    retriever: RetrieverConfig = RetrieverConfig()
 
     @property
     def raw_dir(self) -> Path:
@@ -42,6 +48,14 @@ class Settings(BaseSettings):
     @property
     def processed_dir(self) -> Path:
         return self.data_dir / "processed"
+
+    @property
+    def chunks_path(self) -> Path:
+        return self.processed_dir / "chunks.jsonl"
+
+    @property
+    def index_dir(self) -> Path:
+        return self.data_dir / "index"
 
     @property
     def quarantine_dir(self) -> Path:
