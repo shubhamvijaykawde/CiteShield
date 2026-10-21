@@ -8,7 +8,8 @@ Verified against Ollama 0.40.7 serving qwen3:4b:
 
 * tool calling returns ``tool_calls`` with ids and dict arguments; results go back as
   ``role: "tool"`` messages;
-* ``format`` accepts a JSON schema (grammar-constrained), including ``anyOf`` with null;
+* ``format`` accepts a JSON schema (grammar-constrained), including ``anyOf`` (also at the
+  root) and ``minItems``/``maxItems``, which the draft schema's status rules rely on;
 * ``think=True`` keeps reasoning in ``message.thinking``. qwen3:4b reports
   ``thinking.values == [True]`` in ``/api/show`` (it cannot turn thinking off); with
   ``think=False`` it writes its reasoning into ``content``, so thinking stays on;
@@ -49,6 +50,8 @@ def is_loopback(url: str) -> bool:
 
 class OllamaLLM:
     provider = "ollama"
+    # The grammar enforces anyOf and maxItems, so the draft schema can carry the status rules.
+    schema_status_rules = True
 
     def __init__(
         self,

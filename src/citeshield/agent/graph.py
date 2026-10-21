@@ -382,7 +382,10 @@ class CiteShieldAgent:
             tools=self.tool_specs,
             tool_choice_none=True,
             # Citations are constrained to chunks retrieved in this run; validate re-checks.
-            json_schema=draft_schema(state["evidence"]),
+            json_schema=draft_schema(
+                state["evidence"],
+                status_rules=getattr(self.llm, "schema_status_rules", False),
+            ),
             effort=self.cfg.draft_effort,
         )
         if resp.content:  # an empty assistant turn is not a valid message

@@ -22,6 +22,7 @@ from citeshield.agent.ollama import (
     to_ollama_messages,
     to_ollama_tool,
 )
+from citeshield.agent.schema import draft_schema
 from citeshield.agent.tools import ToolExecutor
 from citeshield.config import IngestConfig, Settings
 from citeshield.contracts.answer import AnswerStatus
@@ -258,13 +259,18 @@ def test_full_graph_runs_through_the_ollama_adapter(executor: ToolExecutor) -> N
     tool_msg = research2["messages"][-1]
     assert tool_msg["role"] == "tool" and tool_msg["tool_name"] == "get_article"
     assert "<source" in tool_msg["content"]
-    # The draft forbids tool calls by omitting tools, and is grammar-constrained to the schema.
-    assert "tools" not in draft_req and draft_req["format"]["required"][0] == "status"
+    # The draft forbids tool calls by omitting tools, and is grammar-constrained to the schema
+    # including its status rules (an answer must cite something, a refusal nothing).
+    assert "tools" not in draft_req
+    assert draft_req["format"] == draft_schema(run.evidence, status_rules=True)
+    branches = draft_req["format"]["anyOf"]
+    assert all(b["required"][0] == "status" for b in branches)
     # The decoder may only emit chunk ids that a tool returned in this run.
-    claim_schema = draft_req["format"]["properties"]["claims"]["items"]
-    chunk_id_schema = claim_schema["properties"]["citations"]["items"]["properties"]["chunk_id"]
-    assert chunk_id_schema == {"type": "string", "enum": sorted(run.evidence)}
-    assert P2 in chunk_id_schema["enum"]
+    for branch in branches:
+        claim_schema = branch["properties"]["claims"]["items"]
+        chunk_id_schema = claim_schema["properties"]["citations"]["items"]["properties"]["chunk_id"]
+        assert chunk_id_schema == {"type": "string", "enum": sorted(run.evidence)}
+        assert P2 in chunk_id_schema["enum"]
     assert all(b["options"]["num_ctx"] == 16384 and b["think"] is True for b in bodies)
     assert all(b["options"]["num_predict"] == 8192 for b in bodies)
     assert run.usage.cost_usd == 0.0

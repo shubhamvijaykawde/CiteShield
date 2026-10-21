@@ -13,6 +13,7 @@ from qdrant_client import QdrantClient
 from citeshield.agent.config import AgentConfig
 from citeshield.agent.graph import CiteShieldAgent
 from citeshield.agent.llm import LLMRefusal, LLMResponse
+from citeshield.agent.schema import draft_schema
 from citeshield.agent.tools import EvidenceItem, ToolExecutor, format_sources
 from citeshield.api.main import create_app
 from citeshield.config import IngestConfig
@@ -59,9 +60,13 @@ def executor(parsed: ParseResult) -> ToolExecutor:
 
 
 def run_agent(
-    executor: ToolExecutor, turns: list[LLMResponse], guard: str = "in_scope", **kw: Any
+    executor: ToolExecutor,
+    turns: list[LLMResponse],
+    guard: str = "in_scope",
+    llm_cls: type[ScriptedLLM] = ScriptedLLM,
+    **kw: Any,
 ) -> tuple[Any, ScriptedLLM, list[tuple[str, dict[str, Any]]]]:
-    llm = ScriptedLLM(guard_label=guard, agent_turns=list(turns))
+    llm = llm_cls(guard_label=guard, agent_turns=list(turns))
     events: list[tuple[str, dict[str, Any]]] = []
     agent = CiteShieldAgent(llm, executor, CFG, verifier=entail_all(executor))
     run = agent.run("Are research widgets exempt?", emit=lambda k, p: events.append((k, p)), **kw)
@@ -96,6 +101,22 @@ def test_happy_path(executor: ToolExecutor) -> None:
     # History is append-only: each request extends the previous one unchanged.
     for prev, nxt in itertools.pairwise(agent_calls):
         assert nxt["messages"][: len(prev["messages"])] == prev["messages"]
+
+
+class _GrammarLLM(ScriptedLLM):
+    schema_status_rules = True
+
+
+@pytest.mark.parametrize(("llm_cls", "status_rules"), [(ScriptedLLM, False), (_GrammarLLM, True)])
+def test_draft_schema_follows_provider_capability(
+    executor: ToolExecutor, llm_cls: type[ScriptedLLM], status_rules: bool
+) -> None:
+    turns = [tool_turn(READ_P2), text_turn("Art. 2(2)."), json_turn(draft((P2, QUOTE)))]
+    run, llm, _ = run_agent(executor, turns, llm_cls=llm_cls)
+    assert run.answer.status is AnswerStatus.ANSWERED
+    sent = llm.calls[-1]["json_schema"]
+    assert sent == draft_schema(run.evidence, status_rules=status_rules)
+    assert ("anyOf" in sent) is status_rules
 
 
 def test_guard_refusal_skips_research(executor: ToolExecutor) -> None:

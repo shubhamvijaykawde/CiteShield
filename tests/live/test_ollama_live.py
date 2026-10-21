@@ -177,6 +177,7 @@ def test_wiring_is_local(local_agent: CiteShieldAgent) -> None:
     assert (local_agent.cfg.agent_model, local_agent.cfg.guard_model) == (MODEL, MODEL)
 
 
+@pytest.mark.model_quality
 @pytest.mark.parametrize("name", list(CASES))
 def test_agent_question(
     local_agent: CiteShieldAgent, local_network_only: list[str], name: str
@@ -199,6 +200,7 @@ def test_agent_question(
         assert rec["refusal_reason"] in _APPROPRIATE_REFUSALS, rec["refusal_reason"]
 
 
+@pytest.mark.model_quality
 def test_sse_endpoint(local_agent: CiteShieldAgent, local_network_only: list[str]) -> None:
     app = create_app(lambda: local_agent)
     with TestClient(app) as client:

@@ -3,9 +3,14 @@
 These use the small fixture corpus and a hashing encoder, so they need only the Ollama server
 (no GPU index or reranker). Each test checks one thing the agent relies on:
 
+* grammar: the draft schema makes an uncited answer impossible (an application guarantee);
 * structured output: the real draft JSON schema -> a valid AgentAnswer citing given sources;
 * tool calling: a tool call the allowlisted executor accepts;
 * repair: after a rejected draft, the model returns a corrected answer that passes validation.
+
+All but the grammar test are marked ``model_quality``: they measure how reliably qwen3:4b
+makes the right choice, so an occasional failure is a model-reliability signal, not proof of
+a code defect. Run only the guarantees with ``-m "live and not model_quality"``.
 
     py -m uv run pytest -m live tests/live/test_ollama_diagnostics.py -s
 """
@@ -76,9 +81,45 @@ def _show(name: str, resp: LLMResponse) -> None:
     print(f"\n[{name}] {json.dumps({k: resp.meta.get(k) for k in keep})}")
 
 
+_CONTENT_FREE_ANSWER = (
+    'Output exactly this JSON and nothing else: {"status": "answered", "summary": "Yes.", '
+    '"claims": [], "checklist": [], "refusal_reason": null, "caveats": []}'
+)
+
+
+def test_draft_grammar_forbids_uncited_answers(
+    ollama: OllamaLLM, local_network_only: list[str]
+) -> None:
+    """Application guarantee, not model quality: Ollama's grammar-constrained decoding must
+    make an answer with nothing cited impossible, even when the prompt asks for exactly that.
+    Only rules the schema encodes are asserted; content quality is Pydantic's and the
+    verifier's job."""
+    assert OllamaLLM.schema_status_rules
+    resp = ollama.chat(
+        model=MODEL,
+        system="Return JSON.",
+        messages=[{"role": "user", "content": _CONTENT_FREE_ANSWER}],
+        json_schema=draft_schema(status_rules=True),
+    )
+    _show("grammar", resp)
+    assert resp.meta["finish_reason"] == "stop", "draft was cut off (thinking used the budget)"
+    draft = resp.json()
+    if draft["status"] == "refused":
+        assert draft["refusal_reason"] is not None
+        assert draft["claims"] == draft["checklist"] == []
+    else:
+        assert draft["claims"] or draft["checklist"], f"uncited {draft['status']} answer"
+    for entry in draft["claims"] + draft["checklist"]:
+        assert entry["citations"], "claim or checklist item without a citation"
+    assert local_network_only == []
+
+
+@pytest.mark.model_quality
 def test_structured_output_with_answer_schema(
     ollama: OllamaLLM, executor: ToolExecutor, local_network_only: list[str]
 ) -> None:
+    """Model reliability: qwen3:4b must choose to answer and cite correctly. The schema keeps
+    the shape valid, but which status the model picks is its own call."""
     chunk = executor.corpus[P2]
     evidence = {P2: EvidenceItem.from_chunk(chunk, "test")}
     user = (
@@ -90,7 +131,7 @@ def test_structured_output_with_answer_schema(
         model=MODEL,
         system=SYSTEM,
         messages=[{"role": "user", "content": user}],
-        json_schema=draft_schema(),
+        json_schema=draft_schema(status_rules=OllamaLLM.schema_status_rules),
     )
     _show("structured", resp)
     assert resp.meta["finish_reason"] == "stop", "draft was cut off (thinking used the budget)"
@@ -102,6 +143,7 @@ def test_structured_output_with_answer_schema(
     assert local_network_only == []
 
 
+@pytest.mark.model_quality
 def test_tool_calling(
     ollama: OllamaLLM, executor: ToolExecutor, local_network_only: list[str]
 ) -> None:
@@ -126,6 +168,7 @@ class _ScriptThenOllama:
     """Scripted turns first (to set up a rejected draft), then the real model."""
 
     provider = "scripted+ollama"
+    schema_status_rules = OllamaLLM.schema_status_rules
 
     def __init__(self, scripted: list[LLMResponse], real: OllamaLLM) -> None:
         self.scripted = scripted
@@ -137,6 +180,7 @@ class _ScriptThenOllama:
         return self.real.chat(**kwargs)
 
 
+@pytest.mark.model_quality
 def test_repair_path(
     ollama: OllamaLLM, executor: ToolExecutor, local_network_only: list[str]
 ) -> None:

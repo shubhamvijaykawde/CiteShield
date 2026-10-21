@@ -59,6 +59,7 @@ dev = [
     "mypy>=1.13",
     "types-PyYAML",
     "lxml-stubs",
+    "jsonschema>=4.26.0",
 ]
 
 [build-system]
@@ -92,4 +93,5 @@ addopts = "-q -m 'not live and not nli'"
 markers = [
     "live: needs a running local Ollama server and the built retrieval index (opt-in)",
     "nli: needs the downloaded NLI model weights and the processed corpus (opt-in)",
+    "model_quality: live test whose outcome depends on the model's choices, not only on code (can fail intermittently)",
 ]
