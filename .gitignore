@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+dist/
+.env
+
+# Raw downloads are a cache; processed chunks and quarantine reports are reproducible from them.
+data/raw/
+data/quarantine/
+mlruns/
+mlartifacts/
+qdrant_storage/

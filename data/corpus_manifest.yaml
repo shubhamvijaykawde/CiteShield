@@ -1,0 +1,29 @@
+# Pinned corpus. Each entry is fetched from the Publications Office Cellar API as XHTML
+# (the Official Journal text as published). `version` becomes part of every chunk_id, so
+# bumping it re-keys the corpus and invalidates cached indexes and eval baselines.
+sources:
+  - regulation: GDPR
+    celex: 32016R0679
+    title: General Data Protection Regulation
+    version: oj-2016-05-04
+    version_date: 2016-05-04
+  - regulation: AI Act
+    celex: 32024R1689
+    title: Artificial Intelligence Act
+    version: oj-2024-07-12
+    version_date: 2024-07-12
+  - regulation: DSA
+    celex: 32022R2065
+    title: Digital Services Act
+    version: oj-2022-10-27
+    version_date: 2022-10-27
+  - regulation: NIS2
+    celex: 32022L2555
+    title: NIS 2 Directive
+    version: oj-2022-12-27
+    version_date: 2022-12-27
+  - regulation: Data Act
+    celex: 32023R2854
+    title: Data Act
+    version: oj-2023-12-22
+    version_date: 2023-12-22

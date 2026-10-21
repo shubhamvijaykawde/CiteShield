@@ -1,0 +1,127 @@
+{
+  "run_id": "20261021T171017Z",
+  "ingest_config_hash": "a5a0b99d535e",
+  "sources": {
+    "GDPR": {
+      "celex": "32016R0679",
+      "version": "oj-2016-05-04",
+      "raw_sha256": "962539af03738bf552319ff4ce42d69e5f95a576307c4dfed7bf87e81b646b9d",
+      "resolved_url": "http://publications.europa.eu/resource/cellar/3e485e15-11bd-11e6-ba9a-01aa75ed71a1.0006.03/DOC_1",
+      "parsed": 655,
+      "valid": 655,
+      "quarantined": 0,
+      "quarantine_rate": 0.0,
+      "by_kind": {
+        "recital": 174,
+        "article": 481
+      },
+      "toc": {
+        "articles": 99,
+        "recitals": 173,
+        "annexes": 0
+      },
+      "quarantine_reasons": {},
+      "doc_errors": [],
+      "parser_warnings": [],
+      "passed": true
+    },
+    "AI Act": {
+      "celex": "32024R1689",
+      "version": "oj-2024-07-12",
+      "raw_sha256": "8f0b656302f9864cc87e040c371f209a9d65ae1a6cecc25ca5eb737e872d721a",
+      "resolved_url": "http://publications.europa.eu/resource/cellar/dc8116a1-3fe6-11ef-865a-01aa75ed71a1.0006.03/DOC_1",
+      "parsed": 936,
+      "valid": 936,
+      "quarantined": 0,
+      "quarantine_rate": 0.0,
+      "by_kind": {
+        "recital": 192,
+        "article": 632,
+        "annex": 112
+      },
+      "toc": {
+        "articles": 113,
+        "recitals": 180,
+        "annexes": 13
+      },
+      "quarantine_reasons": {},
+      "doc_errors": [],
+      "parser_warnings": [],
+      "passed": true
+    },
+    "DSA": {
+      "celex": "32022R2065",
+      "version": "oj-2022-10-27",
+      "raw_sha256": "11b119a7d45f3a10cd41714061f9d907839ef5d1634e41774490f00b95856bbf",
+      "resolved_url": "http://publications.europa.eu/resource/cellar/3ff67256-55c4-11ed-92ed-01aa75ed71a1.0006.03/DOC_1",
+      "parsed": 548,
+      "valid": 548,
+      "quarantined": 0,
+      "quarantine_rate": 0.0,
+      "by_kind": {
+        "recital": 157,
+        "article": 391
+      },
+      "toc": {
+        "articles": 93,
+        "recitals": 156,
+        "annexes": 0
+      },
+      "quarantine_reasons": {},
+      "doc_errors": [],
+      "parser_warnings": [],
+      "passed": true
+    },
+    "NIS2": {
+      "celex": "32022L2555",
+      "version": "oj-2022-12-27",
+      "raw_sha256": "6ee66d5c419d9a056fb98d94083cacf9b818803bd6b416435718e0d4919cb589",
+      "resolved_url": "http://publications.europa.eu/resource/cellar/9b84d482-85bd-11ed-9887-01aa75ed71a1.0006.03/DOC_1",
+      "parsed": 428,
+      "valid": 428,
+      "quarantined": 0,
+      "quarantine_rate": 0.0,
+      "by_kind": {
+        "recital": 145,
+        "article": 258,
+        "annex": 25
+      },
+      "toc": {
+        "articles": 46,
+        "recitals": 144,
+        "annexes": 3
+      },
+      "quarantine_reasons": {},
+      "doc_errors": [],
+      "parser_warnings": [],
+      "passed": true
+    },
+    "Data Act": {
+      "celex": "32023R2854",
+      "version": "oj-2023-12-22",
+      "raw_sha256": "1085b7fa3011970b65b1e4d56205202dceb37f72cd22336aa0c78af35ceaea66",
+      "resolved_url": "http://publications.europa.eu/resource/cellar/ef51c6ab-a06c-11ee-b164-01aa75ed71a1.0006.03/DOC_1",
+      "parsed": 420,
+      "valid": 420,
+      "quarantined": 0,
+      "quarantine_rate": 0.0,
+      "by_kind": {
+        "recital": 123,
+        "article": 297
+      },
+      "toc": {
+        "articles": 50,
+        "recitals": 119,
+        "annexes": 0
+      },
+      "quarantine_reasons": {},
+      "doc_errors": [],
+      "parser_warnings": [],
+      "passed": true
+    }
+  },
+  "total_valid": 2987,
+  "total_quarantined": 0,
+  "corpus_hash": "9713d3f2d8c0d7a5",
+  "passed": true
+}
