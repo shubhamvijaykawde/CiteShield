@@ -12,8 +12,9 @@ texts (GDPR, AI Act, DSA, NIS2, Data Act) and refuses when the evidence is thin.
 | 1. Scaffold, config, data contracts, CI | done |
 | 2. Ingestion with data contract and quarantine | done |
 | 3. Hybrid retrieval + reranker | done |
-| 4. LangGraph agent + FastAPI streaming | next |
-| 5–9. Verifier, evals, red-team, observability, delivery | planned |
+| 4. LangGraph agent + FastAPI streaming | built and tested offline; live run pending |
+| 5. Claim-level verifier + refusal policy | next |
+| 6–9. Evals, red-team, observability, delivery | planned |
 
 ## Quickstart
 
@@ -24,7 +25,45 @@ uv run citeshield-index             # embed with bge-m3 into embedded Qdrant (da
 uv run citeshield-search "Can I use emotion recognition on employees?"
 uv run citeshield-eval-retrieval    # golden-set retrieval metrics -> eval/results/
 uv run pytest
+
+cp .env.example .env                # then set ANTHROPIC_API_KEY
+uv run citeshield-ask "Are AI systems used to screen job applicants high-risk?"
+uv run uvicorn citeshield.api.main:app   # POST /ask streams Server-Sent Events
 ```
+
+## Agent
+
+`src/citeshield/agent/graph.py` defines the agent as a LangGraph state machine:
+
+```
+guard ──in scope──► agent ⇄ tools ──► draft ──► validate ──► final answer
+  │                 (≤ 6 tool rounds)              │  ▲
+  └──out of scope──► typed refusal                 └──┘ one repair, then drop unsupported claims
+```
+
+- **guard** (Claude Haiku 5.5, structured output): screens out questions about other laws,
+  requests to assess the user's own situation, and attempts to change the assistant's
+  instructions. These are refused before any retrieval runs. If the guard fails, the question
+  goes through to research; the guard saves cost and is not the security boundary.
+- **agent ⇄ tools** (Claude Sonnet 5.5): four read-only tools, `retrieve`, `get_article`,
+  `compare_articles` and `generate_checklist`.
+  - Each tool has a strict schema, and the arguments are validated again with Pydantic.
+  - Calls to any other tool name are rejected and flagged.
+  - Every chunk a tool returns goes into an evidence registry.
+  - Source text is wrapped in `<source>` delimiters that the text itself can't close.
+- **draft**: a separate call with a JSON-schema output (`output_config.format`) writes the
+  `AgentAnswer`. Sonnet 5.5 can't be forced to call a tool, so the draft is a separate call
+  whose JSON schema guarantees the format.
+- **validate**: checks the Pydantic contract, and checks that every citation is a chunk some
+  tool returned in this run. On errors it sends the draft back once with the error list. If
+  the repair also fails, claims with unresolved citations are dropped and the answer becomes
+  `partial`, or a refusal if nothing is left.
+- **History is append-only.** Assistant turns go back to the API unchanged, including their
+  thinking blocks.
+- **Prompt caching and refusal fallback.** The system prompt and tool list are cached.
+  Sonnet calls use the server-side refusal fallback (`fallbacks: "default"`).
+- **Logged with each run**: prompt versions (content hashes), the agent, retriever and corpus
+  hashes, token usage and estimated cost.
 
 ## Ingestion and the data contract
 

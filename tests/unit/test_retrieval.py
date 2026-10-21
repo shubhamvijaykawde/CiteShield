@@ -2,82 +2,22 @@
 
 from __future__ import annotations
 
-import hashlib
-import math
-import re
-from datetime import date
-
 import pytest
 from qdrant_client import QdrantClient
 
 from citeshield.config import IngestConfig
 from citeshield.contracts.chunk import (
     ChunkKind,
-    ChunkRecord,
-    TrustTier,
-    estimate_tokens,
-    make_chunk_id,
-    sha256_text,
 )
 from citeshield.ingest.parse_xhtml import ParseResult
 from citeshield.ingest.validate import validate_document
 from citeshield.retrieval.config import RecitalPolicy, RetrievalMode, RetrieverConfig
 from citeshield.retrieval.corpus import Corpus
-from citeshield.retrieval.embed import EncodedText
 from citeshield.retrieval.expand import Expander
 from citeshield.retrieval.hybrid import Hit, HybridSearcher
 from citeshield.retrieval.index import build_index
 from citeshield.retrieval.pipeline import Retriever
-
-DIM = 64
-
-
-class HashingEncoder:
-    """Bag-of-words hashed into a dense vector and a sparse vector."""
-
-    dim = DIM
-
-    def encode(self, texts: list[str]) -> list[EncodedText]:
-        out = []
-        for text in texts:
-            dense = [0.0] * DIM
-            sparse: dict[int, float] = {}
-            for tok in re.findall(r"\w+", text.lower()):
-                h = int(hashlib.md5(tok.encode(), usedforsecurity=False).hexdigest(), 16)
-                dense[h % DIM] += 1.0
-                sparse[h % 50_000] = 1.0
-            norm = math.sqrt(sum(x * x for x in dense)) or 1.0
-            out.append(EncodedText([x / norm for x in dense], sparse))
-        return out
-
-
-class KeywordReranker:
-    def __init__(self, keyword: str) -> None:
-        self.keyword = keyword
-
-    def score(self, query: str, passages: list[str]) -> list[float]:
-        return [1.0 if self.keyword in p else 0.1 for p in passages]
-
-
-def make_chunk(
-    regulation: str,
-    article: int,
-    text: str,
-    *,
-    point: str | None = None,
-    paragraph: int | None = None,
-    heading: str = "Article",
-) -> ChunkRecord:
-    celex, version = "32099R0002", "v1"
-    return ChunkRecord(
-        chunk_id=make_chunk_id(celex=celex, kind=ChunkKind.ARTICLE, version=version,
-                               article=article, paragraph=paragraph, point=point),
-        regulation=regulation, celex=celex, kind=ChunkKind.ARTICLE, article=article,
-        paragraph=paragraph, point=point, heading_path=[regulation, heading], text=text,
-        source_url="https://eur-lex.europa.eu/x", version=version, version_date=date(2099, 1, 1),
-        content_sha256=sha256_text(text), n_tokens=estimate_tokens(text),
-        trust_tier=TrustTier.OFFICIAL,
-    )  # fmt: skip
+from helpers import HashingEncoder, KeywordReranker, make_chunk
 
 
 @pytest.fixture

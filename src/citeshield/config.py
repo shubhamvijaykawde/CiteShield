@@ -9,9 +9,10 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from citeshield.agent.config import AgentConfig
 from citeshield.retrieval.config import RetrieverConfig
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -27,19 +28,25 @@ class IngestConfig(BaseModel):
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="CITESHIELD_", env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_prefix="CITESHIELD_",
+        env_file=PROJECT_ROOT / ".env",
+        env_nested_delimiter="__",
+        extra="ignore",
+    )
 
     data_dir: Path = PROJECT_ROOT / "data"
     manifest_path: Path = PROJECT_ROOT / "data" / "corpus_manifest.yaml"
 
-    agent_model: str = "claude-sonnet-5-5"
-    fast_model: str = "claude-haiku-5-5"
+    # Read from ANTHROPIC_API_KEY (env or .env). None lets the SDK resolve credentials itself.
+    anthropic_api_key: SecretStr | None = Field(None, validation_alias="ANTHROPIC_API_KEY")
 
     # Qdrant server URL; when unset an embedded on-disk instance under data/index is used.
     qdrant_url: str | None = None
 
     ingest: IngestConfig = IngestConfig()
     retriever: RetrieverConfig = RetrieverConfig()
+    agent: AgentConfig = AgentConfig()
 
     @property
     def raw_dir(self) -> Path:

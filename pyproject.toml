@@ -13,6 +13,10 @@ dependencies = [
     "pyyaml>=6.0",
     "qdrant-client>=1.12",
     "numpy>=1.26",
+    "anthropic>=2.0.0",
+    "langgraph>=1.2.16",
+    "fastapi>=0.158.0",
+    "uvicorn[standard]>=0.54.0",
 ]
 
 [project.optional-dependencies]
@@ -28,6 +32,7 @@ citeshield-ingest = "citeshield.ingest.run:main"
 citeshield-index = "citeshield.retrieval.cli:index_main"
 citeshield-search = "citeshield.retrieval.cli:search_main"
 citeshield-eval-retrieval = "citeshield.evaluation.retrieval:main"
+citeshield-ask = "citeshield.agent.cli:main"
 
 # CUDA wheels on the Windows dev box (local GPU indexing); CPU wheels on Linux (CI, Docker, HF Spaces).
 [tool.uv.sources]
