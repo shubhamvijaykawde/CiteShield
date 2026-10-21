@@ -58,6 +58,9 @@ class LLMResponse:
     stop_reason: str
     model: str
     usage: Usage = field(default_factory=Usage)
+    # Provider-reported metadata for the per-call trace (finish reason, lengths, token counts).
+    # Never prompts, outputs or credentials.
+    meta: dict[str, Any] = field(default_factory=dict)
 
     def json(self) -> Any:
         return json.loads(self.text)
@@ -143,13 +146,21 @@ class AnthropicLLM:
             calls=1,
         )
         usage.cost_usd = estimate_cost(resp.model, usage)
+        text = "".join(b.text for b in resp.content if b.type == "text")
         return LLMResponse(
             content=list(resp.content),
-            text="".join(b.text for b in resp.content if b.type == "text"),
+            text=text,
             tool_calls=[
                 ToolCall(b.id, b.name, dict(b.input)) for b in resp.content if b.type == "tool_use"
             ],
             stop_reason=resp.stop_reason or "",
             model=resp.model,
             usage=usage,
+            meta={
+                "provider": self.provider,
+                "model": resp.model,
+                "finish_reason": resp.stop_reason,
+                "content_chars": len(text),
+                "output_tokens": u.output_tokens,
+            },
         )

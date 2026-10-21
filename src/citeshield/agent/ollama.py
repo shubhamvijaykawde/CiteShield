@@ -9,8 +9,12 @@ Verified against Ollama 0.40.7 serving qwen3:4b:
 * tool calling returns ``tool_calls`` with ids and dict arguments; results go back as
   ``role: "tool"`` messages;
 * ``format`` accepts a JSON schema (grammar-constrained), including ``anyOf`` with null;
-* ``think=True`` keeps reasoning in a separate field. With ``think=False`` qwen3 writes its
-  reasoning into ``content``, so thinking stays on by default;
+* ``think=True`` keeps reasoning in ``message.thinking``. qwen3:4b reports
+  ``thinking.values == [True]`` in ``/api/show`` (it cannot turn thinking off); with
+  ``think=False`` it writes its reasoning into ``content``, so thinking stays on;
+* thinking tokens count against ``num_predict``: if reasoning uses the whole budget, the
+  response ends with ``done_reason="length"`` and empty ``content``. Structured drafts need
+  3k-4.5k tokens of thinking on qwen3:4b, hence the 8192 default;
 * the server's default context is 4096 tokens and longer prompts are truncated silently,
   which could cut off the system prompt. ``num_ctx`` is therefore always sent, and a prompt
   that would not fit is refused before it is sent.
@@ -51,7 +55,7 @@ class OllamaLLM:
         base_url: str = "http://localhost:11434",
         *,
         num_ctx: int = 16384,
-        num_predict: int = 4096,
+        num_predict: int = 8192,
         think: bool = True,
         timeout: float = 600.0,
         client: httpx.Client | None = None,
@@ -90,7 +94,15 @@ class OllamaLLM:
 
         resp = self._client.post("/api/chat", json=body)
         resp.raise_for_status()
-        return from_ollama_response(resp.json(), model)
+        out = from_ollama_response(resp.json(), model)
+        out.meta.update(
+            think=body["think"],
+            json_schema=json_schema is not None,
+            tools_sent=len(body.get("tools", [])),
+            num_predict=body["options"]["num_predict"],
+            num_ctx=self.num_ctx,
+        )
+        return out
 
     def _check_context(self, body: dict[str, Any]) -> None:
         prompt_chars = len(json.dumps([body["messages"], body.get("tools"), body.get("format")]))
@@ -209,4 +221,15 @@ def from_ollama_response(data: dict[str, Any], model: str) -> LLMResponse:
         stop_reason=stop,
         model=str(data.get("model") or model),
         usage=usage,
+        meta={
+            "provider": "ollama",
+            "model": str(data.get("model") or model),
+            "finish_reason": data.get("done_reason"),
+            "content_chars": len(text),
+            # Reasoning comes back in its own field and is never sent back or shown.
+            "thinking_chars": len(msg.get("thinking") or ""),
+            "tool_calls": len(calls),
+            "prompt_tokens": usage.input_tokens,
+            "output_tokens": usage.output_tokens,
+        },
     )

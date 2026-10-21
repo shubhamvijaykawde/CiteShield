@@ -4,11 +4,12 @@ Opt-in and slow (minutes per question):
 
     py -m uv run pytest -m live tests/live -s
 
-Asserted: the pipeline's invariants (valid AgentAnswer, citations only to retrieved chunks,
-allowlist respected, only local network traffic, no paid provider constructed).
-Recorded, not asserted: answer quality (status, whether the expected article was cited,
-whether quotes are verbatim). That is what milestones 5-6 measure; a 4B model is expected to
-be weaker, and the results file shows how.
+Asserted for every case: the pipeline's invariants (valid AgentAnswer, citations only to
+retrieved chunks, allowlist respected, only local network traffic, no paid provider).
+Asserted per case: the expected outcome. The answerable question must be *answered* and cite
+GDPR Art. 33(1); a refusal there is a failure, not a pass. Out-of-scope questions must be
+refused for an appropriate reason.
+Recorded only (diagnostics): quote verbatim rate, per-call trace, rejected drafts.
 """
 
 from __future__ import annotations
@@ -52,6 +53,8 @@ CASES = {
     },
 }
 _records: dict[str, Any] = {}
+# A question outside the corpus is refused by the guard or after research found nothing.
+_APPROPRIATE_REFUSALS = {"out_of_scope", "insufficient_evidence"}
 
 
 def _skip_reason() -> str | None:
@@ -141,6 +144,22 @@ def _record(
         "tool_calls": [(t["name"], t["input"], t["is_error"]) for t in run.tool_log],
         "security_flags": run.security_flags,
         "caveats": run.answer.caveats,
+        "draft_rejections": run.draft_rejections,
+        "llm_trace": [
+            {
+                k: e.get(k)
+                for k in (
+                    "stage",
+                    "provider",
+                    "model",
+                    "finish_reason",
+                    "content_chars",
+                    "thinking_chars",
+                    "output_tokens",
+                )
+            }
+            for e in run.llm_log
+        ],
         "llm_calls": run.usage.calls,
         "tokens_in_out": [run.usage.input_tokens, run.usage.output_tokens],
         "cost_usd": run.usage.cost_usd,
@@ -168,6 +187,16 @@ def test_agent_question(
     rec = _record(name, run, local_agent.tools.corpus, time.perf_counter() - t0, case["expected"])
     _assert_invariants(run, local_network_only)
     assert rec["cost_usd"] == 0.0
+    if case["expected"]:
+        assert rec["status"] == "answered", (
+            f"answerable question not answered: {rec['status']} ({rec['refusal_reason']}); "
+            f"rejections={rec['draft_rejections']}"
+        )
+        missing = set(case["expected"]) - set(rec["expected_cited"])
+        assert not missing, f"expected citation(s) {sorted(missing)} not cited; got {rec['cited']}"
+    else:
+        assert rec["status"] == "refused", f"out-of-scope question got status {rec['status']}"
+        assert rec["refusal_reason"] in _APPROPRIATE_REFUSALS, rec["refusal_reason"]
 
 
 def test_sse_endpoint(local_agent: CiteShieldAgent, local_network_only: list[str]) -> None:
@@ -188,5 +217,10 @@ def test_sse_endpoint(local_agent: CiteShieldAgent, local_network_only: list[str
     _records["sse"] = {"event_kinds": kinds, "final": events[-1][1].get("answer")}
     print(f"\n[sse] events: {kinds}\n[sse] answer: {json.dumps(events[-1][1].get('answer'))}")
     assert kinds[0] == "status" and kinds[-1] == "final", kinds
-    AgentAnswer.model_validate(events[-1][1]["answer"])
+    final = AgentAnswer.model_validate(events[-1][1]["answer"])
+    assert final.status.value == "refused", f"CCPA question got {final.status.value}"
+    assert final.refusal_reason is not None
+    assert final.refusal_reason.value in _APPROPRIATE_REFUSALS
+    # Every LLM call behind the stream went to the local provider.
+    assert {e["provider"] for e in events[-1][1]["llm_log"]} <= {"ollama"}
     assert local_network_only == []

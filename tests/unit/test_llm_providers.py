@@ -258,5 +258,63 @@ def test_full_graph_runs_through_the_ollama_adapter(executor: ToolExecutor) -> N
     assert "<source" in tool_msg["content"]
     # The draft forbids tool calls by omitting tools, and is grammar-constrained to the schema.
     assert "tools" not in draft_req and draft_req["format"]["required"][0] == "status"
+    # The decoder may only emit chunk ids that a tool returned in this run.
+    claim_schema = draft_req["format"]["properties"]["claims"]["items"]
+    chunk_id_schema = claim_schema["properties"]["citations"]["items"]["properties"]["chunk_id"]
+    assert chunk_id_schema == {"type": "string", "enum": sorted(run.evidence)}
+    assert P2 in chunk_id_schema["enum"]
     assert all(b["options"]["num_ctx"] == 16384 and b["think"] is True for b in bodies)
+    assert all(b["options"]["num_predict"] == 8192 for b in bodies)
     assert run.usage.cost_usd == 0.0
+    # Per-call trace: one entry per request, provider/model/finish reason, no prompt text.
+    assert [e["stage"] for e in run.llm_log] == ["guard", "agent", "agent", "draft"]
+    assert {(e["provider"], e["model"]) for e in run.llm_log} == {("ollama", "qwen3:4b")}
+    assert run.llm_log[-1]["finish_reason"] == "stop" and run.llm_log[-1]["json_schema"] is True
+    assert all("messages" not in e and "system" not in e for e in run.llm_log)
+
+
+def test_draft_truncated_by_thinking_is_rejected_then_refused(executor: ToolExecutor) -> None:
+    """The live failure: thinking used the whole num_predict budget, content came back empty.
+
+    It must surface as a precise validation error and end in a refusal, never an answer.
+    """
+    truncated = {
+        "model": "qwen3:4b",
+        "message": {"role": "assistant", "content": "", "thinking": "x" * 18000},
+        "done": True,
+        "done_reason": "length",
+        "prompt_eval_count": 3200,
+        "eval_count": 8192,
+    }
+    script = [
+        _reply('{"label": "in_scope"}'),
+        _reply("Nothing more to look up."),
+        truncated,
+        truncated,
+    ]
+    bodies: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        bodies.append(json.loads(request.content))
+        return httpx.Response(200, json=script.pop(0))
+
+    llm = OllamaLLM(
+        client=httpx.Client(
+            base_url="http://localhost:11434", transport=httpx.MockTransport(handler)
+        )
+    )
+    run = CiteShieldAgent(llm, executor, AgentConfig(agent_model="m", guard_model="m")).run("q?")
+
+    assert run.answer.status is AnswerStatus.REFUSED
+    assert len(run.draft_rejections) == 2
+    assert all("output-token limit" in errs[0] for errs in run.draft_rejections)
+    assert [(e["stage"], e["finish_reason"], e["content_chars"]) for e in run.llm_log[-2:]] == [
+        ("draft", "length", 0),
+        ("draft", "length", 0),
+    ]
+    assert run.llm_log[-1]["thinking_chars"] == 18000
+    # No empty assistant turn was added to the history before the repair request.
+    repair_messages = bodies[-1]["messages"]
+    assert all(
+        m["content"] or m.get("tool_calls") for m in repair_messages if m["role"] == "assistant"
+    )

@@ -74,6 +74,8 @@ class AgentState(TypedDict, total=False):
     answer: AgentAnswer
     usage: Usage
     timings_ms: dict[str, float]
+    llm_log: list[dict[str, Any]]
+    draft_rejections: list[list[str]]
 
 
 @dataclass
@@ -86,6 +88,10 @@ class AgentRun:
     timings_ms: dict[str, float]
     guard_label: str | None
     meta: dict[str, Any] = field(default_factory=dict)
+    # One entry per LLM call: stage, provider, model, finish reason, sizes. No prompt text.
+    llm_log: list[dict[str, Any]] = field(default_factory=list)
+    # Validation errors of each rejected draft, in order.
+    draft_rejections: list[list[str]] = field(default_factory=list)
 
     def cited_sources(self) -> dict[str, EvidenceItem]:
         ids = {c.chunk_id for c in self.answer.all_citations()}
@@ -132,6 +138,8 @@ class CiteShieldAgent:
             "draft_attempts": 0,
             "usage": Usage(),
             "timings_ms": {},
+            "llm_log": [],
+            "draft_rejections": [],
         }
         t0 = time.perf_counter()
         try:
@@ -159,6 +167,8 @@ class CiteShieldAgent:
             timings_ms=timings,
             guard_label=final.get("guard_label"),
             meta=self.meta,
+            llm_log=final.get("llm_log", []),
+            draft_rejections=final.get("draft_rejections", []),
         )
         emit("final", serialize_run(run))
         return run
@@ -192,9 +202,21 @@ class CiteShieldAgent:
         # Snapshot the history: callers keep appending to their list after the call.
         kwargs["messages"] = list(kwargs["messages"])
         resp = self.llm.chat(max_tokens=self.cfg.max_tokens, **kwargs)
+        elapsed = (time.perf_counter() - t0) * 1000
         state["usage"].add(resp.usage)
         timings = state["timings_ms"]
-        timings[key] = timings.get(key, 0.0) + (time.perf_counter() - t0) * 1000
+        timings[key] = timings.get(key, 0.0) + elapsed
+        # Shared list mutated in place, like `usage`, so every node's calls accumulate.
+        state["llm_log"].append(
+            {
+                "stage": key,
+                "provider": getattr(self.llm, "provider", type(self.llm).__name__),
+                "model": kwargs["model"],
+                "stop_reason": resp.stop_reason,
+                "ms": round(elapsed),
+                **resp.meta,
+            }
+        )
         return resp
 
     def _guard(self, state: AgentState, config: RunnableConfig) -> AgentState:
@@ -328,17 +350,26 @@ class CiteShieldAgent:
             messages=messages,
             tools=self.tool_specs,
             tool_choice_none=True,
-            json_schema=draft_schema(),
+            # Citations are constrained to chunks retrieved in this run; validate re-checks.
+            json_schema=draft_schema(state["evidence"]),
             effort=self.cfg.draft_effort,
         )
-        messages.append({"role": "assistant", "content": resp.content})
+        if resp.content:  # an empty assistant turn is not a valid message
+            messages.append({"role": "assistant", "content": resp.content})
         try:
             draft = resp.json()
             if not isinstance(draft, dict):
                 raise ValueError("draft is not a JSON object")
             errors: list[str] = []
         except ValueError as e:
-            draft, errors = None, [f"output is not valid JSON: {e}"]
+            if resp.stop_reason == "max_tokens":
+                reason = (
+                    "output hit the output-token limit before the JSON was complete "
+                    f"({len(resp.text)} characters of answer were produced)"
+                )
+            else:
+                reason = f"output is not valid JSON: {e}"
+            draft, errors = None, [reason]
         return {
             "messages": messages,
             "draft": draft,
@@ -365,6 +396,8 @@ class CiteShieldAgent:
             return {"answer": answer, "draft_errors": []}
 
         _emitter(config)("draft_rejected", {"errors": errors[:10]})
+        # Every attempt's errors are kept; the refusal caveat only shows the last ones.
+        state["draft_rejections"].append(errors[:20])
         if state["draft_attempts"] < self.cfg.max_draft_attempts:
             feedback = (
                 "Your answer was rejected. Fix these problems and return the full corrected "
@@ -479,6 +512,8 @@ def serialize_run(run: AgentRun) -> dict[str, Any]:
         "tool_log": run.tool_log,
         "security_flags": run.security_flags,
         "guard_label": run.guard_label,
+        "llm_log": run.llm_log,
+        "draft_rejections": run.draft_rejections,
         "usage": {
             "llm_calls": run.usage.calls,
             "input_tokens": run.usage.input_tokens,

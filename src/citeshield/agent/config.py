@@ -43,6 +43,8 @@ class LLMSettings(BaseModel):
     ollama_guard_model: str | None = Field(None, description="Defaults to ollama_model.")
     # Ollama's own default (4096) silently truncates longer prompts.
     ollama_num_ctx: int = Field(16384, ge=2048)
-    ollama_num_predict: int = Field(4096, ge=256, description="Output budget incl. thinking.")
+    # Thinking tokens count against this budget. qwen3:4b thinks 3k-4.5k tokens before writing
+    # a draft answer; at 4096 about a third of drafts came back empty (done_reason=length).
+    ollama_num_predict: int = Field(8192, ge=256, description="Output budget incl. thinking.")
     ollama_think: bool = Field(True, description="qwen3 leaks reasoning into content when off.")
     ollama_timeout_s: float = Field(600.0, gt=0)
