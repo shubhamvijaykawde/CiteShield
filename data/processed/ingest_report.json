@@ -1,5 +1,5 @@
 {
-  "run_id": "20261021T171017Z",
+  "run_id": "20261021T205612Z",
   "ingest_config_hash": "a5a0b99d535e",
   "sources": {
     "GDPR": {
@@ -122,6 +122,6 @@
   },
   "total_valid": 2987,
   "total_quarantined": 0,
-  "corpus_hash": "9713d3f2d8c0d7a5",
+  "corpus_hash": "b5afd60b188d1cfa",
   "passed": true
 }

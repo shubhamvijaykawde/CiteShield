@@ -1,7 +1,8 @@
 # ruff: noqa: RUF001  (the fold table lists typographic quote/dash characters on purpose)
 """Deterministic quote matching against canonical text.
 
-Normalisation is deliberately small and fully deterministic: Unicode NFKC, typographic quotes
+Normalisation is deliberately small and fully deterministic: Unicode superscripts written as
+"^n" (matching how the parser renders OJ exponents), Unicode NFKC, typographic quotes
 and dashes folded to ASCII, soft hyphens removed, whitespace collapsed, case folded, and
 leading/trailing punctuation trimmed from each quoted segment. Nothing fuzzy is accepted; the
 similarity score is reported only to explain a near miss.
@@ -38,6 +39,7 @@ _FOLD = str.maketrans(
         "­": None,
     }
 )
+_SUPERSCRIPT = re.compile(r"[⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻]+")
 _WS = re.compile(r"\s+")
 _ELLIPSIS = re.compile(r"\[\s*(?:\.\.\.|…)\s*\]|\.\.\.|…")
 _EDGE_PUNCT = " .,;:'\"()"
@@ -45,6 +47,9 @@ MAX_SEGMENTS = 4
 
 
 def normalise(text: str) -> str:
+    # The parser renders OJ superscripts as "^25"; fold Unicode superscripts the same way
+    # before NFKC would flatten "10²⁵" into "1025", a different number.
+    text = _SUPERSCRIPT.sub(lambda m: "^" + unicodedata.normalize("NFKC", m.group()), text)
     folded = unicodedata.normalize("NFKC", text).translate(_FOLD)
     return _WS.sub(" ", folded).strip().casefold()
 

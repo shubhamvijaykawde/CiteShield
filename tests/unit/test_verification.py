@@ -54,7 +54,21 @@ def test_quote_matching(quote: str, ok: bool) -> None:
 def test_normalisation_folds_typography_only() -> None:
     lsq, rsq, en_dash, nbsp = chr(0x2018), chr(0x2019), chr(0x2013), chr(0xA0)
     assert normalise(f"{lsq}data{rsq} {en_dash} x{nbsp}y") == "'data' - x y"
-    assert normalise("10²⁵") == "1025"  # NFKC: identical to the corpus text
+    assert normalise("10²⁵") == "10^25"  # not NFKC's "1025": that is another number
+
+
+@pytest.mark.parametrize(
+    ("quote", "ok"),
+    [
+        ("greater than 10^25", True),  # as the parser renders the OJ exponent
+        ("greater than 10²⁵", True),  # Unicode superscripts fold to the same form
+        ("greater than 1025", False),  # the flattened number is not what the act says
+        ("greater than 10 25", False),
+    ],
+)
+def test_exponent_quote_matching(quote: str, ok: bool) -> None:
+    source = "floating point operations is greater than 10^25."
+    assert match_quote(quote, source).matched is ok
 
 
 def test_near_miss_reports_similarity_but_fails() -> None:

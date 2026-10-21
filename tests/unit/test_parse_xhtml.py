@@ -63,6 +63,24 @@ def test_recital_strips_number_and_footnote_marker(parsed: ParseResult) -> None:
     assert text == "The protection of test subjects is a fundamental concern of this Regulation."
 
 
+def test_exponent_superscript_kept_and_footnote_marker_dropped(src: SourceSpec) -> None:
+    # Markup as in AI Act Art. 51(2), plus a footnote marker on the same paragraph.
+    xhtml = b"""<?xml version="1.0"?>
+<html xmlns="http://www.w3.org/1999/xhtml"><body>
+<div id="art_1"><p class="oj-ti-art">Article 1</p>
+<div id="001.001"><p class="oj-normal">1. The cumulative amount of computation is greater
+than 10<span class="oj-super">25</span> floating point operations<span
+class="oj-super oj-note-tag">(<a href="#ntr3">3</a>)</span>.</p>
+<p class="oj-note"><a href="#ntc3">(<span class="oj-super">3</span>)</a> Directive 2099/1.</p>
+</div></div>
+</body></html>"""
+    text = parse_document(xhtml, src).records[0]["text"]
+    assert text.splitlines() == [
+        "1. The cumulative amount of computation is greater than 10^25 floating point operations.",
+        "(3) Directive 2099/1.",  # a footnote body's own number is not an exponent
+    ]
+
+
 def test_short_paragraph_is_a_single_chunk(mini_xhtml: bytes, src: SourceSpec) -> None:
     parsed = parse_document(mini_xhtml, src, max_tokens=512)
     ids = [

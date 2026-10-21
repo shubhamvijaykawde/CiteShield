@@ -119,8 +119,16 @@ def _normalise(text: str) -> str:
 
 def _render(el: Element) -> str:
     """Flatten an element to text: blocks become lines, table rows become 'label text'."""
-    if "oj-note-tag" in _classes(el):  # footnote markers
+    classes = _classes(el)
+    if "oj-note-tag" in classes:  # footnote markers
         return ""
+    parent = el.getparent()
+    if "oj-super" in classes and (parent is None or parent.tag != "a"):
+        # A superscript inside a link numbers a footnote body ("(1) Directive ..."); any
+        # other is an exponent (AI Act Art. 51(2): 10^25 FLOPs), which flattening into the
+        # surrounding text would turn into 1025.
+        sup = "".join(t for t in el.itertext() if isinstance(t, str)).strip()
+        return f"^{sup}" if sup else ""
     if el.tag == "table":
         rows = []
         for tr in _elements(el, "./tbody/tr | ./tr"):
