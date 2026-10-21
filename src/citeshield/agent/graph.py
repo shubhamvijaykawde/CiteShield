@@ -108,6 +108,7 @@ class CiteShieldAgent:
             "retriever_config_hash": tools.retriever.config_hash,
             "corpus_version": self.corpus_version,
             "prompt_versions": prompts.versions(),
+            "llm_provider": getattr(llm, "provider", type(llm).__name__),
             "agent_model": self.cfg.agent_model,
             "guard_model": self.cfg.guard_model,
         }

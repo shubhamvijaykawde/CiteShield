@@ -1,16 +1,43 @@
-"""Wire the production agent from settings (GPU/CPU models, Qdrant, Anthropic client)."""
+"""Wire the production agent from settings (GPU/CPU models, Qdrant, LLM provider)."""
 
 from __future__ import annotations
 
+from citeshield.agent.config import AgentConfig
 from citeshield.agent.graph import CiteShieldAgent
-from citeshield.agent.llm import AnthropicLLM
+from citeshield.agent.llm import LLM, AnthropicLLM
 from citeshield.agent.tools import ToolExecutor
 from citeshield.config import Settings
 from citeshield.retrieval.pipeline import Retriever
 
 
+def build_llm(settings: Settings) -> tuple[LLM, AgentConfig]:
+    """The configured LLM client and the agent config with that provider's model names."""
+    llm = settings.llm
+    if llm.provider == "ollama":
+        from citeshield.agent.ollama import OllamaLLM
+
+        client = OllamaLLM(
+            llm.ollama_base_url,
+            num_ctx=llm.ollama_num_ctx,
+            num_predict=llm.ollama_num_predict,
+            think=llm.ollama_think,
+            timeout=llm.ollama_timeout_s,
+        )
+        cfg = settings.agent.model_copy(
+            update={
+                "agent_model": llm.ollama_model,
+                "guard_model": llm.ollama_guard_model or llm.ollama_model,
+            }
+        )
+        return client, cfg
+    if llm.provider == "anthropic":
+        key = settings.anthropic_api_key.get_secret_value() if settings.anthropic_api_key else None
+        return AnthropicLLM(api_key=key), settings.agent
+    raise ValueError(f"unknown LLM provider {llm.provider!r}")
+
+
 def build_agent(settings: Settings | None = None) -> CiteShieldAgent:
     settings = settings or Settings()
+    llm, cfg = build_llm(settings)
     retriever = Retriever.from_settings(settings)
-    key = settings.anthropic_api_key.get_secret_value() if settings.anthropic_api_key else None
-    return CiteShieldAgent(AnthropicLLM(api_key=key), ToolExecutor(retriever), settings.agent)
+    return CiteShieldAgent(llm, ToolExecutor(retriever), cfg)

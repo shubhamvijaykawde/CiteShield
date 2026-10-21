@@ -12,7 +12,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from citeshield.agent.config import AgentConfig
+from citeshield.agent.config import AgentConfig, LLMSettings
 from citeshield.retrieval.config import RetrieverConfig
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -47,6 +47,7 @@ class Settings(BaseSettings):
     ingest: IngestConfig = IngestConfig()
     retriever: RetrieverConfig = RetrieverConfig()
     agent: AgentConfig = AgentConfig()
+    llm: LLMSettings = LLMSettings()
 
     @property
     def raw_dir(self) -> Path:

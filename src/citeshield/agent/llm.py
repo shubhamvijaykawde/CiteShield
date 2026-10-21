@@ -90,6 +90,8 @@ def estimate_cost(model: str, usage: Usage) -> float:
 
 
 class AnthropicLLM:
+    provider = "anthropic"
+
     def __init__(self, api_key: str | None = None, *, timeout: float = 120.0) -> None:
         import anthropic
 
