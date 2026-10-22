@@ -44,18 +44,22 @@ class BGEM3Encoder:
         device: str | None = None,
         max_length: int = 512,
         batch_size: int = 16,
+        dtype: str | None = None,
     ) -> None:
         import torch
         from huggingface_hub import hf_hub_download
         from transformers import AutoModel, AutoTokenizer
 
         self.device = resolve_device(device)
-        dtype = torch.float16 if self.device.startswith("cuda") else torch.float32
+        if dtype is not None:
+            weights: torch.dtype = getattr(torch, dtype)
+        else:
+            weights = torch.float16 if self.device.startswith("cuda") else torch.float32
         self.max_length = max_length
         self.batch_size = batch_size
 
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        self.model = AutoModel.from_pretrained(model_name, dtype=dtype).to(self.device)
+        self.model = AutoModel.from_pretrained(model_name, dtype=weights).to(self.device)
         self.model.eval()
 
         sparse_state = torch.load(
@@ -63,7 +67,7 @@ class BGEM3Encoder:
         )
         self.sparse_linear = torch.nn.Linear(self.model.config.hidden_size, 1)
         self.sparse_linear.load_state_dict(sparse_state)
-        self.sparse_linear.to(self.device, dtype=dtype).eval()
+        self.sparse_linear.to(self.device, dtype=weights).eval()
 
         self.dim: int = self.model.config.hidden_size
         self._special_ids = set(self.tokenizer.all_special_ids)

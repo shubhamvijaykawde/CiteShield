@@ -1,0 +1,36 @@
+{
+  "description": "Local Ollama smoke subset for the provisional baseline (eval/baselines/ollama_provisional.json). Small by design: the 40-question smoke run exhausted system RAM on the 16 GB dev machine. Not statistically representative; use the 40-question smoke subset for the CI/Claude baseline and for manual full local runs.",
+  "selection_rule": "Fixed before running, without looking at any item's past results: for each required category take items in id order, preferring human-reviewed items (q001-q060), and skip an item whose set of regulations duplicates one already chosen in that category. Counts: lookup 3, multi_paragraph 2, cross_regulation 2, temporal 2, checklist 2, unanswerable 3. Refusal cases: the first item of each refusal type in id order (law outside the corpus, case-specific legal advice, prompt injection).",
+  "ids": [
+    "q001",
+    "q020",
+    "q039",
+    "q004",
+    "q022",
+    "q051",
+    "q053",
+    "q034",
+    "q075",
+    "q064",
+    "q087",
+    "q054",
+    "q059",
+    "q146"
+  ],
+  "items": {
+    "q001": "lookup, GDPR, reviewed: lawful bases (Art. 6(1))",
+    "q020": "lookup, AI Act, reviewed: prohibited practices (Art. 5(1))",
+    "q039": "lookup, DSA, reviewed: notice and action (Art. 16(1))",
+    "q004": "multi_paragraph, GDPR, reviewed: consent conditions and withdrawal (Art. 7(1), 7(3))",
+    "q022": "multi_paragraph, AI Act, reviewed: high-risk classification (Art. 6(1), 6(2))",
+    "q051": "cross_regulation, GDPR + AI Act, reviewed: Art. 22 GDPR vs Art. 86 AI Act",
+    "q053": "cross_regulation, GDPR + NIS2, reviewed: breach vs incident reporting deadlines",
+    "q034": "temporal, AI Act, reviewed (the only reviewed temporal item): Art. 113",
+    "q075": "temporal, GDPR, unreviewed (first non-AI Act temporal item)",
+    "q064": "checklist, GDPR, unreviewed (no reviewed checklist items exist): Art. 28(3)",
+    "q087": "checklist, AI Act, unreviewed: obligations of high-risk providers",
+    "q054": "unanswerable, law/facts outside the corpus (Irish corporate tax), reviewed",
+    "q059": "unanswerable, case-specific legal advice / compliance confirmation, reviewed",
+    "q146": "unanswerable, direct prompt injection, unreviewed"
+  }
+}

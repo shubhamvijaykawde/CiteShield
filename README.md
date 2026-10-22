@@ -14,7 +14,8 @@ texts (GDPR, AI Act, DSA, NIS2, Data Act) and refuses when the evidence is thin.
 | 3. Hybrid retrieval + reranker | done |
 | 4. LangGraph agent + FastAPI streaming (Claude or local Ollama) | done; live-tested on Ollama qwen3:4b |
 | 5. Claim-level verifier + refusal policy | done (thresholds provisional, see below) |
-| 6–9. Evals, red-team, observability, delivery | planned |
+| 6. Answer evals, LLM judge + calibration, CI gate | in progress (tooling done; provisional local Ollama baseline; labels and Claude baseline pending) |
+| 7–9. Red-team, observability, delivery | planned |
 
 ## Quickstart
 
@@ -92,10 +93,112 @@ Thresholds come from `uv run citeshield-calibrate-verifier` on 60 hand-labelled 
 (`eval/verification/claims.jsonl`, stratified calibration/held-out split); see
 [eval/results/verifier_calibration.md](eval/results/verifier_calibration.md). The model
 separates that set with a wide margin, so the data shows reliability on clear-cut claims but
-does not pin the thresholds down; they are provisional until milestone 6.
+does not pin the thresholds down; they stay provisional until the answer evals have been
+labelled.
 
 Opt-in test suites: `pytest -m nli tests/nli` (real model) and `pytest -m live tests/live`
 (Ollama).
+
+## Evaluation
+
+The golden set (`eval/golden/questions.jsonl`) has 151 questions: lookups, definitions,
+multi-paragraph, cross-regulation, comparison, checklist, temporal, and 30 (20%) that must be
+refused (other laws, case law, enforcement facts, personal legal advice, injection, off-topic).
+Each answerable item lists its expected citations at paragraph level and a short reference
+answer. Items q061-q151 were drafted with every citation checked against the corpus and are
+marked `"reviewed": false` until a human has read them. The reference answers of q001-q053
+were also drafted from the text of their expected provisions and still need a human read.
+
+```bash
+uv run citeshield-eval --subset smoke          # 40 stratified questions (eval/golden/smoke.json)
+uv run citeshield-eval --subset full --judge   # every item, plus the LLM judge
+uv run citeshield-eval --rescore eval/runs/<run_id> [--judge]   # re-score, no agent calls
+uv run citeshield-eval-gate eval/runs/<run_id>/metrics.json   # compare with the baseline
+uv run citeshield-eval-gate eval/runs/<run_id>/metrics.json --write-baseline
+uv run citeshield-label eval/runs/<run_id>     # hand-label answers for judge calibration
+uv run citeshield-calibrate-judge              # Cohen's kappa, judge vs. human labels
+```
+
+A run writes `eval/runs/<run_id>/` (`meta.json`, `answers.jsonl`, `judge.jsonl`,
+`metrics.json`, `report.md`; gitignored) and copies the report to
+[eval/results/answers_latest.md](eval/results/answers_latest.md). Re-running the same
+`--run-id` resumes where it stopped, and refuses if the agent configuration changed in
+between. `--write-smoke` regenerates the smoke subset deterministically (proportional per
+category, at least two items each); changing it requires a new baseline.
+
+Metrics (`src/citeshield/evaluation/metrics.py`), all deterministic:
+
+- **citation precision / recall**: cited chunks matching an expected paragraph, and
+  expected paragraphs that were cited.
+- **refusal precision / recall / F1**: a deliberate refusal is the positive class. A crash
+  (no answer at all, e.g. a context overflow) is never a refusal: crashes are counted in
+  `n_crashed` / `error_rate` and in schema validity, and excluded from the quality metrics.
+- **schema validity**: share of final answers that round-trip the `AgentAnswer` contract,
+  with crashes counted as invalid. **first-draft validity** is the share with no repair.
+- **faithfulness**: the verifier's support ratio on the draft behind each answer. This is
+  RAGAS-style faithfulness, except the claims come from the answer schema and entailment
+  comes from the local NLI model instead of an LLM.
+- **context precision / recall**: ID-based, on the chunks the tools returned. Precision is
+  rank-weighted as in RAGAS (mean precision@k at the ranks of relevant chunks).
+- **latency** p50/p95 (nearest rank, crashes excluded) and **cost** per question.
+
+The judge (`evaluation/judge.py`, versioned prompt `evaluation/prompts/judge.md`) grades
+correctness 1-3 against the reference answer, faithfulness to the cited text, and citation
+adequacy. It sees exactly the text the human labeller sees, and each verdict and label
+records a hash of that text, so a label is only compared with a verdict on the same answer.
+Calibration splits the labels into dev and held-out halves by a stable hash, and the kappa
+reported is the held-out one (target >= 0.7; quadratic-weighted for correctness). Results go
+to `eval/results/judge_calibration.md`.
+
+**CI gate** (`.github/workflows/eval-gate.yml`): on PRs it runs the smoke subset against
+Claude and compares the result with `eval/baselines/anthropic.json`. It fails if
+faithfulness drops by more than 0.03 or falls below 0.85, citation precision drops by more
+than 0.03, refusal F1 drops by more than 0.05, or schema validity is below 100%. A run made
+on a different subset, golden set, corpus or set of models is reported as not comparable;
+it never counts as a pass. Comparability also covers the Ollama model digest, the LLM
+decoding options (`num_ctx`, `num_predict`) and the devices and weight dtypes the models
+actually loaded with. Prompts and configs may differ from the baseline: they are what the
+gate tests. The gate exits 0 (pass), 1 (regression) or 2 (not comparable / no baseline),
+and posts its metrics table as a PR comment. Until `eval/baselines/anthropic.json` exists
+the job is skipped with a notice.
+
+**Gates per provider.** The thresholds above apply to Claude only. For local Ollama
+(qwen3:4b) only the deterministic checks block: schema validity below 100% and any crash.
+Faithfulness, citation precision and refusal F1 are reported as advisory (drops of more
+than 0.10, 0.10 and 0.15 are flagged) and never fail a run, and the 0.85 faithfulness floor
+does not apply. qwen3:4b samples, so the same question can be refused in one run and
+answered in the next, and the local subset is small; the advisory thresholds stay
+uncalibrated until run-to-run variance has been measured on repeated runs.
+
+**Local Ollama baseline (provisional).** On the 16 GB dev machine the 40-question smoke run
+completes but exhausts system RAM (diagnostic report:
+[eval/results/ollama_smoke40_mixed_diagnostic.md](eval/results/ollama_smoke40_mixed_diagnostic.md);
+faithfulness 0.841 there is evidence, not a threshold). The local baseline therefore uses
+`--subset local`: 14 hand-picked questions in `eval/golden/smoke_local.json` (lookup,
+multi-paragraph, cross-regulation, temporal, checklist, and three refusal types; the file
+records the selection rule). It is stored as `eval/baselines/ollama_provisional.json`, with
+its limitations in `baseline_info`. It is not statistically representative. The run
+configuration keeps the GPU for the LLM and saves RAM:
+
+```bash
+CITESHIELD_LLM__PROVIDER=ollama CITESHIELD_LLM__OLLAMA_NUM_CTX=24576 \
+CITESHIELD_LLM__OLLAMA_NUM_PREDICT=8192 CITESHIELD_RETRIEVER__EMBED_DTYPE=bfloat16 \
+CITESHIELD_RETRIEVER__RERANK_BATCH_SIZE=8 CITESHIELD_VERIFIER__BATCH_SIZE=4 \
+uv run citeshield-eval --subset local
+uv run citeshield-eval-gate eval/runs/<run_id>/metrics.json --baseline eval/baselines/ollama_provisional.json
+```
+
+The 40-question `--subset smoke` run stays available for manual or scheduled local runs on
+a machine with more RAM; never mix its metrics with a `local` run (the gate reports them as
+not comparable).
+
+CI does not build the index. Build it locally and publish it as a release asset keyed by the
+corpus hash (printed by `citeshield-index` and stored in `data/index/manifest.json`):
+
+```bash
+tar -czf index.tar.gz -C data index
+gh release create index-<corpus_hash> index.tar.gz --title "Index <corpus_hash>" --notes "Qdrant index"
+```
 
 ## Ingestion and the data contract
 

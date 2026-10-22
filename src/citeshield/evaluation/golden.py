@@ -84,6 +84,8 @@ class Category(StrEnum):
     MULTI_PARAGRAPH = "multi_paragraph"
     CROSS_REGULATION = "cross_regulation"
     TEMPORAL = "temporal"
+    COMPARISON = "comparison"
+    CHECKLIST = "checklist"
     UNANSWERABLE = "unanswerable"
 
 
@@ -96,6 +98,10 @@ class GoldenItem(BaseModel):
     expected: list[str] = Field(default_factory=list)
     should_refuse: bool = False
     notes: str | None = None
+    # Short gold answer for the judge and the reference-based metrics; None for refusals.
+    reference_answer: str | None = None
+    # Items drafted by the assistant start unreviewed until a human has checked the citations.
+    reviewed: bool = True
 
     @field_validator("expected")
     @classmethod
@@ -118,6 +124,8 @@ def load_golden(path: Path) -> list[GoldenItem]:
     for i in items:
         if i.should_refuse == bool(i.expected):
             raise ValueError(f"{i.id}: refusal items have no citations, others need some")
+        if i.should_refuse and i.reference_answer:
+            raise ValueError(f"{i.id}: refusal items have no reference answer")
     return items
 
 

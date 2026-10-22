@@ -13,6 +13,9 @@ data/quarantine/
 data/index/
 # Per-question eval dumps are large and regenerable; the markdown summaries are committed.
 eval/results/*.json
+eval/results/*.jsonl
+# Answer-eval runs (per-question records); report.md files are summarised in eval/results.
+eval/runs/
 mlruns/
 mlartifacts/
 qdrant_storage/

@@ -1,0 +1,118 @@
+name: eval-gate
+
+# Smoke answer eval against Claude, compared with eval/baselines/anthropic.json.
+# Needs the ANTHROPIC_API_KEY secret, so it never runs for pull requests from forks.
+# The retrieval index is built locally on the GPU and published as a release asset named
+# index-<corpus_hash> (see README, "CI gate"); CI only downloads it.
+
+on:
+  pull_request:
+    paths:
+      - "src/**"
+      - "eval/golden/**"
+      - "eval/baselines/**"
+      - "data/processed/**"
+      - "pyproject.toml"
+      - "uv.lock"
+  workflow_dispatch:
+    inputs:
+      subset:
+        description: "smoke or full"
+        default: "smoke"
+        type: choice
+        options: [smoke, full]
+      judge:
+        description: "Also run the LLM judge"
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: eval-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  eval:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      RUN_ID: ci-${{ github.run_id }}-${{ github.run_attempt }}
+      SUBSET: ${{ inputs.subset || 'smoke' }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      GH_TOKEN: ${{ github.token }}
+      HF_HOME: ${{ github.workspace }}/.hf
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for a baseline
+        id: baseline
+        run: |
+          if [ -f eval/baselines/anthropic.json ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::eval/baselines/anthropic.json does not exist yet; the gate is skipped. Create it with citeshield-eval-gate --write-baseline."
+          fi
+
+      - uses: astral-sh/setup-uv@v5
+        if: steps.baseline.outputs.present == 'true' || github.event_name == 'workflow_dispatch'
+        with:
+          enable-cache: true
+
+      - name: Install
+        if: steps.baseline.outputs.present == 'true' || github.event_name == 'workflow_dispatch'
+        run: uv sync --locked --extra ml
+
+      - name: Download the retrieval index for this corpus
+        if: steps.baseline.outputs.present == 'true' || github.event_name == 'workflow_dispatch'
+        run: |
+          hash=$(uv run python -c "from citeshield.config import Settings; from citeshield.contracts.chunk import corpus_hash; from citeshield.retrieval.corpus import Corpus; print(corpus_hash(Corpus.load(Settings().chunks_path)))")
+          echo "corpus hash: $hash"
+          gh release download "index-$hash" --pattern index.tar.gz --dir /tmp
+          tar -xzf /tmp/index.tar.gz -C data
+
+      - name: Cache models
+        if: steps.baseline.outputs.present == 'true' || github.event_name == 'workflow_dispatch'
+        uses: actions/cache@v4
+        with:
+          path: .hf
+          key: hf-${{ hashFiles('src/citeshield/retrieval/config.py', 'src/citeshield/verify/config.py') }}
+
+      - name: Run the answer eval
+        if: steps.baseline.outputs.present == 'true' || github.event_name == 'workflow_dispatch'
+        run: |
+          judge=""
+          if [ "${{ inputs.judge }}" = "true" ]; then judge="--judge"; fi
+          uv run citeshield-eval --subset "$SUBSET" --run-id "$RUN_ID" $judge
+
+      - name: Gate
+        id: gate
+        if: steps.baseline.outputs.present == 'true'
+        run: |
+          set +e
+          uv run citeshield-eval-gate "eval/runs/$RUN_ID/metrics.json" --markdown gate.md
+          echo "code=$?" >> "$GITHUB_OUTPUT"
+          cat gate.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Comment on the PR
+        if: steps.gate.outcome == 'success' && github.event_name == 'pull_request'
+        run: |
+          gh pr comment "${{ github.event.pull_request.number }}" --edit-last --body-file gate.md \
+            || gh pr comment "${{ github.event.pull_request.number }}" --body-file gate.md
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eval-${{ env.RUN_ID }}
+          path: eval/runs/${{ env.RUN_ID }}
+          if-no-files-found: ignore
+
+      - name: Fail unless the gate passed
+        if: steps.gate.outcome == 'success' && steps.gate.outputs.code != '0'
+        run: |
+          echo "eval gate exit code ${{ steps.gate.outputs.code }} (1 = regression, 2 = not comparable)"
+          exit 1

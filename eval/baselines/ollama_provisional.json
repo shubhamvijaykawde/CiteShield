@@ -1,0 +1,181 @@
+{
+  "baseline_info": {
+    "status": "provisional",
+    "notes": [
+      "PROVISIONAL local Ollama baseline: 14 hand-picked questions (eval/golden/smoke_local.json), one run, not statistically representative and not production-quality.",
+      "qwen3:4b samples, so single-question outcomes vary between identical runs; quality gates for Ollama are advisory only (only schema validity and crashes block).",
+      "Hardware: 16 GB RAM, RTX 4060 Laptop 8 GB, Ryzen 7 7435HS (no native BF16). Embedder bf16 on CPU, reranker fp32 batch 8, NLI fp32 batch 4, all on CPU; qwen3:4b on GPU, num_ctx 24576, num_predict 8192.",
+      "System RAM was under pressure during the run (available min 28 MiB, under 1 GiB in 395 of 711 samples, under 256 MiB in 13, never 10 in a row); latency figures were measured under memory pressure. VRAM free stayed >= 1356 MiB, no crashes, no CPU offload.",
+      "Code was uncommitted (git_dirty) at commit 23456ae when this run was made. The 40-question run (ollama-smoke-mixed-1, faithfulness 0.841) is diagnostic evidence only and is not combined with this baseline."
+    ],
+    "source_run": "ollama-local-mixed-1",
+    "n_questions": 14.0
+  },
+  "meta": {
+    "run_id": "ollama-local-mixed-1",
+    "run_at": "2026-10-22T19:32:59.274172+00:00",
+    "subset": "local",
+    "ids": [
+      "q001",
+      "q020",
+      "q039",
+      "q004",
+      "q022",
+      "q051",
+      "q053",
+      "q034",
+      "q075",
+      "q064",
+      "q087",
+      "q054",
+      "q059",
+      "q146"
+    ],
+    "golden_sha": "9aa8049d79c5",
+    "corpus_hash": "b5afd60b188d1cfa",
+    "agent": {
+      "agent_config_hash": "77adc77a4b0b",
+      "retriever_config_hash": "17f538090a82",
+      "corpus_version": "b5afd60b188d1cfa",
+      "prompt_versions": {
+        "agent_system": "918732c3",
+        "draft": "a1a7ec56",
+        "guard": "ba8d6a89"
+      },
+      "llm_provider": "ollama",
+      "agent_model": "qwen3:4b",
+      "guard_model": "qwen3:4b",
+      "verifier_model": "MoritzLaurer/DeBERTa-v3-large-mnli-fever-anli-ling-wanli",
+      "verifier_thresholds": {
+        "entail": 0.51,
+        "contradiction": 0.56,
+        "sentence": 0.51,
+        "min_retrieval_score": 0.3
+      }
+    },
+    "runtime": {
+      "models": {
+        "llm_provider": "ollama",
+        "agent_model": "qwen3:4b",
+        "guard_model": "qwen3:4b",
+        "embed_model": "BAAI/bge-m3",
+        "rerank_model": "BAAI/bge-reranker-v2-m3",
+        "nli_model": "MoritzLaurer/DeBERTa-v3-large-mnli-fever-anli-ling-wanli",
+        "nli_revision": "b3546ea6b0346eb6f8d5d68b13c7dc6d0376b3d7",
+        "ollama_digests": {
+          "qwen3:4b": "359d7dd4bcdab3d86b87d73ac27966f4dbb9f5efdfcc75d34a8764a09474fae7"
+        }
+      },
+      "llm_options": {
+        "num_ctx": 24576,
+        "num_predict": 8192,
+        "think": true
+      },
+      "devices": {
+        "embed": "cpu",
+        "rerank": "cpu",
+        "nli": "cpu"
+      },
+      "dtypes": {
+        "embed": [
+          "torch.bfloat16"
+        ],
+        "rerank": [
+          "torch.float32"
+        ],
+        "nli": [
+          "torch.float32"
+        ]
+      },
+      "config_hashes": {
+        "agent": "77adc77a4b0b",
+        "llm": "d8ddfd35576b",
+        "retriever": "17f538090a82",
+        "verifier": "b2f7e71fc57f"
+      },
+      "code": {
+        "git_commit": "23456aea02da79eb1e87a0e481c854511217fb32",
+        "git_dirty": true,
+        "ollama_version": "0.40.7"
+      }
+    },
+    "n_items": 14,
+    "num_ctx_observed": [
+      24576
+    ],
+    "config_consistent": true
+  },
+  "metrics": {
+    "n": 14.0,
+    "n_completed": 14.0,
+    "n_crashed": 0.0,
+    "citation_precision": 1.0,
+    "citation_recall": 0.5,
+    "refusal_precision": 0.375,
+    "refusal_recall": 1.0,
+    "refusal_f1": 0.5454545454545454,
+    "schema_validity": 1.0,
+    "first_draft_validity": 0.6428571428571429,
+    "faithfulness": 0.8214285714285714,
+    "context_precision": 0.696969696969697,
+    "context_recall": 0.9090909090909091,
+    "error_rate": 0.0,
+    "latency_p50_s": 187.6033,
+    "latency_p95_s": 454.0785,
+    "cost_per_question_usd": 0.0,
+    "judge_n": 0.0,
+    "judge_correctness": null,
+    "judge_faithful": null,
+    "judge_citation_adequate": null
+  },
+  "by_category": {
+    "checklist": {
+      "n": 2.0,
+      "crashed": 0.0,
+      "refused": 0.0,
+      "citation_precision": 1.0,
+      "citation_recall": 1.0,
+      "faithfulness": 0.875
+    },
+    "cross_regulation": {
+      "n": 2.0,
+      "crashed": 0.0,
+      "refused": 0.5,
+      "citation_precision": 1.0,
+      "citation_recall": 0.5,
+      "faithfulness": 1.0
+    },
+    "lookup": {
+      "n": 3.0,
+      "crashed": 0.0,
+      "refused": 0.6666666666666666,
+      "citation_precision": 1.0,
+      "citation_recall": 0.3333333333333333,
+      "faithfulness": 1.0
+    },
+    "multi_paragraph": {
+      "n": 2.0,
+      "crashed": 0.0,
+      "refused": 0.5,
+      "citation_precision": 1.0,
+      "citation_recall": 0.25,
+      "faithfulness": 1.0
+    },
+    "temporal": {
+      "n": 2.0,
+      "crashed": 0.0,
+      "refused": 0.5,
+      "citation_precision": 1.0,
+      "citation_recall": 0.5,
+      "faithfulness": 0.5
+    },
+    "unanswerable": {
+      "n": 3.0,
+      "crashed": 0.0,
+      "refused": 1.0,
+      "citation_precision": null,
+      "citation_recall": null,
+      "faithfulness": null
+    }
+  }
+}

@@ -278,3 +278,24 @@ def test_api_reports_agent_errors(executor: ToolExecutor) -> None:
     with TestClient(app) as client:
         events = _events(client.post("/ask", json={"question": "Are widgets exempt?"}).text)
     assert events[-1][0] == "error"
+
+
+def test_eval_record_from_run(executor: ToolExecutor) -> None:
+    from citeshield.evaluation.golden import Category, GoldenItem
+    from citeshield.evaluation.records import AnswerRecord
+
+    turns = [tool_turn(READ_P2), text_turn("Art. 2(2)."), json_turn(draft((P2, QUOTE)))]
+    run, _, _ = run_agent(executor, turns)
+    item = GoldenItem(
+        id="q001",
+        question="Are research widgets exempt?",
+        category=Category.LOOKUP,
+        expected=["Test Reg 2(2)"],
+        reference_answer="Yes.",
+    )
+    rec = AnswerRecord.from_run(item, run)
+    assert rec.schema_valid and rec.first_draft_valid and not rec.refused
+    assert rec.support_ratio == 1.0
+    assert P2 in rec.retrieved and set(rec.cited) == {P2}
+    assert rec.llm_calls == 4
+    assert QUOTE in rec.render_answer()

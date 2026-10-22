@@ -34,6 +34,10 @@ citeshield-search = "citeshield.retrieval.cli:search_main"
 citeshield-eval-retrieval = "citeshield.evaluation.retrieval:main"
 citeshield-ask = "citeshield.agent.cli:main"
 citeshield-calibrate-verifier = "citeshield.evaluation.verifier_calibration:main"
+citeshield-eval = "citeshield.evaluation.run_eval:main"
+citeshield-eval-gate = "citeshield.evaluation.gate:main"
+citeshield-label = "citeshield.evaluation.labeling:main"
+citeshield-calibrate-judge = "citeshield.evaluation.judge_calibration:main"
 
 # CUDA wheels on the Windows dev box (local GPU indexing); CPU wheels on Linux (CI, Docker, HF Spaces).
 [tool.uv.sources]

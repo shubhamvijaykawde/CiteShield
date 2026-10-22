@@ -63,14 +63,15 @@ class Retriever:
             raise RuntimeError(f"index embedded with {manifest.embed_model}, not {cfg.embed_model}")
         encoder = BGEM3Encoder(
             cfg.embed_model,
-            device=cfg.device,
+            device=cfg.effective_embed_device,
+            dtype=cfg.embed_dtype,
             max_length=cfg.max_length,
             batch_size=cfg.embed_batch_size,
         )
         reranker = (
             CrossEncoderReranker(
                 cfg.rerank_model,
-                device=cfg.device,
+                device=cfg.effective_rerank_device,
                 max_length=cfg.max_length,
                 batch_size=cfg.rerank_batch_size,
             )

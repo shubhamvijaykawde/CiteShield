@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -46,3 +47,21 @@ class RetrieverConfig(BaseModel):
     embed_batch_size: int = Field(16, ge=1)
     rerank_batch_size: int = Field(16, ge=1)
     device: str | None = Field(None, description="None = cuda if available, else cpu.")
+    # Per-model overrides of ``device`` (None = use ``device``). The answer eval runs both on
+    # CPU so the 8 GB GPU is left to the Ollama model (citeshield-eval --embed-device).
+    # Left unset they are dropped from ``config_hash`` (exclude_none), so hashes don't move.
+    embed_device: str | None = None
+    rerank_device: str | None = None
+    # Opt-in embedder weight dtype; None = fp16 on cuda, fp32 on cpu (the encoder's rule).
+    # "bfloat16" on cpu saves ~1.1 GB for the answer eval at ~4% retrieval latency on the dev
+    # box (no native BF16), with identical rankings on the fixed benchmark. Unset it is
+    # dropped from config_hash, like the device overrides.
+    embed_dtype: Literal["float32", "bfloat16"] | None = None
+
+    @property
+    def effective_embed_device(self) -> str | None:
+        return self.embed_device or self.device
+
+    @property
+    def effective_rerank_device(self) -> str | None:
+        return self.rerank_device or self.device
