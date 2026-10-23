@@ -93,6 +93,11 @@ strict = true
 plugins = ["pydantic.mypy"]
 mypy_path = "src"
 
+# The ml extra is not installed in lint/unit CI; its imports are typed only where installed.
+[[tool.mypy.overrides]]
+module = ["torch", "torch.*", "transformers", "transformers.*", "huggingface_hub", "huggingface_hub.*"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 # Live tests need local services (Ollama, GPU index) and are opt-in: `pytest -m live`.

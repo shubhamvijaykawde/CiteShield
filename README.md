@@ -7,30 +7,53 @@ texts (GDPR, AI Act, DSA, NIS2, Data Act) and refuses when the evidence is thin.
 
 ## Status
 
-| Milestone | State |
+Version 0.1.0 is the final local portfolio release; research is frozen. **[RELEASE.md](RELEASE.md)**
+has the feature status table, the verified results, the adversarial findings and the known
+limitations.
+
+| feature | status |
 |---|---|
-| 1. Scaffold, config, data contracts, CI | done |
-| 2. Ingestion with data contract and quarantine | done |
-| 3. Hybrid retrieval + reranker | done |
-| 4. LangGraph agent + FastAPI streaming (Claude or local Ollama) | done; live-tested on Ollama qwen3:4b |
-| 5. Claim-level verifier + refusal policy | done (thresholds provisional, see below) |
-| 6. Answer evals, LLM judge + calibration, CI gate | closed with gaps: harness, 60 labels and provisional Ollama baseline done; qwen3:4b judge failed calibration; Claude baseline pending ([closeout](eval/results/milestone6_closeout.md)) |
-| 7–9. Red-team, observability, delivery | planned |
+| Ingestion, data contract, quarantine | implemented, tested |
+| Hybrid retrieval + reranker | implemented, evaluated |
+| LangGraph agent, structured answers, refusal policy (Claude or local Ollama) | implemented, evaluated on a 14-question local subset (single runs) |
+| Claim-level verifier (citations, quotes, NLI, coordinated clauses) | implemented; thresholds provisional |
+| Over-refusal and adversarial evaluation (deterministic scoring) | implemented; adversarial results preliminary, defense ablations incomplete |
+| LLM judge | implemented, failed calibration, informational only |
+| FastAPI SSE API, CLI, Docker image, CI | implemented (the image is built in CI, not run end to end) |
+| Claude baseline / blocking quality gate, public demo, MLflow/Langfuse | not implemented |
+
+Detailed reports: [Milestone 6 closeout](eval/results/milestone6_closeout.md),
+[over-refusal](eval/results/milestone7_over_refusal.md),
+[adversarial evaluation and ablations](eval/results/milestone7_adversarial.md).
 
 ## Quickstart
 
+On Windows, use `py -m uv` instead of `uv` if `uv` is not on PATH.
+
 ```bash
 uv sync --group dev --extra ml      # CUDA torch on Windows, CPU torch on Linux
-uv run citeshield-ingest            # fetch, parse, validate -> data/processed/chunks.jsonl
-uv run citeshield-index             # embed with bge-m3 into embedded Qdrant (data/index)
+uv run pytest                       # deterministic suite: no models, keys or index needed
+uv run citeshield-index             # embed the committed corpus with bge-m3 into data/index
 uv run citeshield-search "Can I use emotion recognition on employees?"
 uv run citeshield-eval-retrieval    # golden-set retrieval metrics -> eval/results/
-uv run pytest
 
-cp .env.example .env                # then set ANTHROPIC_API_KEY
+cp .env.example .env                # then set ANTHROPIC_API_KEY, or the Ollama settings
 uv run citeshield-ask "Are AI systems used to screen job applicants high-risk?"
 uv run uvicorn citeshield.api.main:app   # POST /ask streams Server-Sent Events
 ```
+
+`data/processed/chunks.jsonl` is committed; `uv run citeshield-ingest` rebuilds it from the
+official sources.
+
+Docker (CPU; the locally built index and a model cache are mounted):
+
+```bash
+docker build -t citeshield .
+docker run --rm -p 8000:8000 -v ./data/index:/app/data/index -v citeshield-models:/models --env-file .env citeshield
+```
+
+CI (`.github/workflows/ci.yml`) runs ruff, format, mypy, the deterministic test suite and
+the image build, with no API keys or model downloads.
 
 ## Agent
 
@@ -79,6 +102,10 @@ Every drafted answer is verified before anyone sees it (`src/citeshield/verify/`
    entailed by its cited text according to a local NLI model
    (`MoritzLaurer/DeBERTa-v3-large-mnli-fever-anli-ling-wanli`, MIT, CPU by default).
    Verdicts: supported, unsupported, contradicted, conflicting, citation_invalid.
+   A claim that joins obligations ("must send X and notify Y", or "A; B") must also have
+   each clause entailed. Whole-sentence entailment alone once let a claim through that
+   was only half supported (`VerifierConfig.check_conjuncts`). Other forms of partial
+   support, such as an unsupported qualifier inside one clause, are not split out.
 4. **Summary and caveats** are split into sentences; only sentences entailed by the verified
    claims or their sources are kept. Disclaimers are added by code.
 

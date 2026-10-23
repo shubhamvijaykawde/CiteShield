@@ -47,6 +47,53 @@ def split_sentences(text: str) -> list[str]:
     return [s.strip() for s in _SENTENCE_SPLIT.split(text.strip()) if s.strip()]
 
 
+# Coordinated obligations. A part after "and" starts a new clause when it begins with one of
+# these verbs ("... and notify ...") or reaches a modal within four words ("... and the
+# provider shall ..."). Noun coordination ("controllers and processors") is never split.
+_MODAL = r"(?:must|shall|should|may|will|can|has to|have to|is required to|are required to)"
+_VERBS = (
+    "adopt|affix|apply|appoint|assess|carry|communicate|comply|cooperate|delete|demonstrate|"
+    "designate|disclose|document|draw|enable|ensure|erase|establish|facilitate|give|implement|"
+    "indicate|inform|keep|label|maintain|make|monitor|notify|obtain|provide|publish|record|"
+    "rectify|register|report|restrict|retain|review|send|store|submit|take|train|update|verify"
+)
+_CLAUSE_AND = re.compile(
+    rf",?\s+and\s+(?=(?:{_VERBS})\b|(?:\S+\s+){{0,3}}{_MODAL}\b)", re.IGNORECASE
+)
+_SUBJECT = re.compile(rf"^(.*?\b{_MODAL})\s", re.IGNORECASE)
+_LEADING_VERB = re.compile(rf"^(?:{_VERBS})\b", re.IGNORECASE)
+# Every part must read as a clause; "controllers of large platforms" is not one.
+_HAS_VERB = re.compile(
+    rf"\b(?:{_MODAL}|{_VERBS}|is|are|be|has|have|does|do|requires?|applies|apply)\b",
+    re.IGNORECASE,
+)
+_MIN_PART_WORDS = 3
+
+
+def split_conjuncts(text: str) -> list[str]:
+    """The coordinated clauses of a claim, each a full statement; [] if it has only one.
+
+    "Providers must send X and notify Y." gives "Providers must send X" and "Providers must
+    notify Y." (the subject and modal are carried over). Splits on ";" and on "and" before a
+    verb or a new clause; a part shorter than three words cancels the split, so lists of
+    nouns stay whole. This covers explicit coordination only, not every way two
+    requirements can share one sentence.
+    """
+    pieces = [p.strip() for chunk in text.split(";") for p in _CLAUSE_AND.split(chunk)]
+    pieces = [p for p in pieces if p]
+    if len(pieces) < 2 or any(len(p.split()) < _MIN_PART_WORDS for p in pieces):
+        return []
+    if not all(_HAS_VERB.search(p) for p in pieces):
+        return []
+    subject = _SUBJECT.match(pieces[0])
+    out = [pieces[0]]
+    for p in pieces[1:]:
+        if subject and _LEADING_VERB.match(p):
+            p = f"{subject.group(1)} {p}"
+        out.append(p)
+    return out
+
+
 def retrieval_top_score(evidence: Mapping[str, EvidenceItem]) -> float | None:
     """Best rerank score among binding sources the tools returned (None: no scored search)."""
     scores = [e.score for e in evidence.values() if e.score is not None and e.kind != "recital"]
@@ -61,6 +108,7 @@ class _Item:
     citations: list[Citation]
     checks: list[CitationCheck] = field(default_factory=list)
     premises: dict[int, str] = field(default_factory=dict)  # usable citation index -> premise
+    parts: list[str] = field(default_factory=list)  # coordinated clauses, if more than one
 
 
 class Verifier:
@@ -90,9 +138,22 @@ class Verifier:
         if answer.status is AnswerStatus.REFUSED:
             return report
 
-        items = [_Item("claim", i, c.text, c.citations) for i, c in enumerate(answer.claims)]
+        conj = self.cfg.check_conjuncts
+        items = [
+            _Item("claim", i, c.text, c.citations, parts=split_conjuncts(c.text) if conj else [])
+            for i, c in enumerate(answer.claims)
+        ]
         items += [
-            _Item("checklist", i, f"{c.obligation} (applies to: {c.applies_to})", c.citations)
+            _Item(
+                "checklist",
+                i,
+                f"{c.obligation} (applies to: {c.applies_to})",
+                c.citations,
+                parts=[
+                    f"{p} (applies to: {c.applies_to})"
+                    for p in (split_conjuncts(c.obligation) if conj else [])
+                ],
+            )
             for i, c in enumerate(answer.checklist or [])
         ]
         for item in items:
@@ -112,11 +173,26 @@ class Verifier:
                 ]
         best = _best_by_key(jobs, self.nli.score([(p, h) for _, p, h in jobs]) if jobs else [])
 
+        # Each coordinated part against each usable source and against all of them together.
+        part_jobs: list[tuple[tuple[int, int], str, str]] = []  # ((item, part), premise, hyp)
+        for n, item in enumerate(items):
+            sources = list(item.premises.values())
+            if len(sources) > 1:
+                sources.append("\n".join(sources))
+            for k, part in enumerate(item.parts):
+                for premise in sources:
+                    part_jobs += [
+                        ((n, k), w, part) for w in premise_windows(premise, part, self.nli)
+                    ]
+        part_scores = self.nli.score([(p, h) for _, p, h in part_jobs]) if part_jobs else []
+        part_best = _best_by_key(part_jobs, part_scores)
+
         for n, item in enumerate(items):
             for j, check in enumerate(item.checks):
                 if (n, j) in best:
                     check.entailment = best[(n, j)]
-            report.claims.append(self._verdict(item, best.get((n, -1))))
+            parts = [(part, part_best.get((n, k))) for k, part in enumerate(item.parts)]
+            report.claims.append(self._verdict(item, best.get((n, -1)), parts))
 
         report.sentences = self._check_sentences(answer, report)
         return report
@@ -155,7 +231,12 @@ class Verifier:
             if quote.matched:
                 item.premises[j] = f"{label}: {res.chunk.text}"
 
-    def _verdict(self, item: _Item, combined: Entailment | None) -> ClaimCheck:
+    def _verdict(
+        self,
+        item: _Item,
+        combined: Entailment | None,
+        parts: Sequence[tuple[str, Entailment | None]] = (),
+    ) -> ClaimCheck:
         usable = [(j, c) for j, c in enumerate(item.checks) if c.usable]
         reasons = [f"{c.chunk_id}: {c.reason}" for c in item.checks if not c.usable and c.reason]
         check = ClaimCheck(
@@ -180,11 +261,24 @@ class Verifier:
         ]
         combined_ok = combined is not None and combined.entailment >= t_e
         supported = bool(entailing) or combined_ok
+        # The whole claim may score as entailed while one coordinated part is not.
+        unsupported_parts = [
+            (text, e.entailment if e else 0.0)
+            for text, e in parts
+            if e is None or e.entailment < t_e
+        ]
 
         if supported and contradicting:
             check.verdict = ClaimVerdict.CONFLICTING
             check.reasons.append(f"entailed by {entailing or 'the combined sources'} "
                                  f"but contradicted by {contradicting}")  # fmt: skip
+        elif supported and unsupported_parts:
+            check.verdict = ClaimVerdict.UNSUPPORTED
+            check.reasons += [
+                f"part not entailed by the cited text: {text!r} (best P(entailment)={p:.2f} "
+                f"< {t_e})"
+                for text, p in unsupported_parts
+            ]
         elif supported:
             check.verdict = ClaimVerdict.SUPPORTED
             check.supporting_chunk_ids = entailing or [c.chunk_id for _, c in usable]

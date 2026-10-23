@@ -1,0 +1,17 @@
+.git
+.github
+.venv
+.env
+**/__pycache__
+**/*.pyc
+.mypy_cache
+.ruff_cache
+.pytest_cache
+data/raw
+data/index
+data/quarantine
+eval/runs
+mlruns
+mlartifacts
+qdrant_storage
+tests

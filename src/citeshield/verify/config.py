@@ -33,5 +33,11 @@ class VerifierConfig(BaseModel):
     # queries differ from the golden questions.
     min_retrieval_score: float = Field(0.30, ge=0, le=1)
 
+    # A claim joining several obligations ("must send X and notify Y", or "A; B") is only
+    # supported if every coordinated part is entailed too, not just the sentence as a whole.
+    # NLI scored "Providers must send confirmation of receipt and notify decisions" as
+    # entailed by DSA Art. 16(5), which covers only the second part (Milestone 7 audit).
+    check_conjuncts: bool = True
+
     min_quote_segment_chars: int = Field(12, ge=1)
     max_revisions: int = Field(1, ge=0, le=1, description="At most one controlled revision.")

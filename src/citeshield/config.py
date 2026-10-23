@@ -1,7 +1,7 @@
 """Runtime configuration.
 
-Every pipeline run logs ``config_hash`` of the settings objects it used, so a metric in
-MLflow or a trace in Langfuse can always be traced back to the exact configuration.
+Every pipeline run logs ``config_hash`` of the settings objects it used (in eval run
+metadata), so any metric can be traced back to the exact configuration.
 """
 
 from __future__ import annotations

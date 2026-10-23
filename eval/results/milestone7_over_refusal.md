@@ -318,6 +318,11 @@ passage that supports the claim, even though verification uses the full paragrap
 q039 issues are on the salvage path, but the 16(5) problem is a verifier precision limit,
 not caused by the cut. Nothing was changed; the verifier thresholds stay provisional.
 
+*Follow-up (release 0.1.0).* The verifier now also requires every coordinated clause of a
+claim to be entailed (`VerifierConfig.check_conjuncts`, `tests/unit/test_conjuncts.py`).
+This targets exactly this pattern: "send confirmation of receipt" + "and notify decisions".
+The runs in this report predate the change and were not re-run. Thresholds are unchanged.
+
 **Resources.** Free system RAM fell from 9.7 GB at the start to a minimum of 349 MB
 (sampled every minute). There was no failure, but memory pressure remains real for this
 configuration.

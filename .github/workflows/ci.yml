@@ -1,9 +1,14 @@
 name: ci
 
+# Deterministic checks only: no API keys, no model downloads, no LLM calls. The unit suite
+# includes the verifier, refusal-policy and adversarial-harness regression tests, which run
+# against scripted LLMs and NLI stand-ins.
+
 on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -21,3 +26,17 @@ jobs:
       - run: uv run ruff format --check .
       - run: uv run mypy src
       - run: uv run pytest
+
+  docker-build:
+    # Builds the API image (CPU torch) to keep the Dockerfile working; nothing is pushed or run.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: citeshield:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
