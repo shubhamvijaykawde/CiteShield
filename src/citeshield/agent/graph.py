@@ -47,6 +47,15 @@ from citeshield.contracts.verification import VerificationReport
 from citeshield.verify.verifier import Verifier
 
 Emit = Callable[[str, dict[str, Any]], None]
+# What the user asked for. "answer" adds nothing to the prompt; the others say which output
+# shape and tool fit, but every mode returns the same verified ``AgentAnswer``.
+Mode = Literal["answer", "compare", "checklist"]
+_MODE_HINTS: dict[str, str] = {
+    "compare": "The user asked to compare provisions: find each side (use compare_articles "
+    "when you know the articles) and state the differences as cited claims.",
+    "checklist": "The user asked for a compliance checklist: use generate_checklist and "
+    "answer with checklist items, one obligation each.",
+}
 
 _GUARD_REFUSALS: dict[str, tuple[RefusalReason, str]] = {
     "other_law": (
@@ -73,6 +82,7 @@ _GUARD_REFUSALS: dict[str, tuple[RefusalReason, str]] = {
 class AgentState(TypedDict, total=False):
     question: str
     regulations: list[str] | None
+    mode: Mode
     guard_label: str
     messages: list[Any]
     pending_calls: list[Any]
@@ -155,12 +165,18 @@ class CiteShieldAgent:
     # ------------------------------------------------------------------ public
 
     def run(
-        self, question: str, *, regulations: list[str] | None = None, emit: Emit | None = None
+        self,
+        question: str,
+        *,
+        regulations: list[str] | None = None,
+        emit: Emit | None = None,
+        mode: Mode = "answer",
     ) -> AgentRun:
         emit = emit or (lambda _t, _p: None)
         state: AgentState = {
             "question": question.strip(),
             "regulations": regulations or None,
+            "mode": mode,
             "messages": [],
             "tool_rounds": 0,
             "tool_log": [],
@@ -527,6 +543,8 @@ def _question_block(state: AgentState) -> str:
     scope = ""
     if state.get("regulations"):
         scope = f"\n\nRestrict the research to: {', '.join(state['regulations'] or [])}."
+    if hint := _MODE_HINTS.get(state.get("mode", "answer")):
+        scope += f"\n\n{hint}"
     return f"<question>\n{state['question']}\n</question>{scope}"
 
 

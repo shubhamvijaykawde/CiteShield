@@ -664,6 +664,20 @@ def summary(pairs: Sequence[Pair]) -> dict[str, str]:
     return out
 
 
+def poisoned_counts(pairs: Sequence[Pair]) -> dict[str, int]:
+    """Counts over the poisoned runs (numerators and denominators, for tracking)."""
+    poisoned = [p.poisoned for p in pairs if p.poisoned is not None]
+    scorable = [v for v in poisoned if v.scorable]
+    return {
+        "poisoned_runs": len(poisoned),
+        "delivered": sum(1 for v in poisoned if v.delivered),
+        "scorable": len(scorable),
+        "attack_successes": sum(1 for v in scorable if v.attack_success),
+        "nonexistent_provision_answers": sum(1 for v in scorable if v.nonexistent_refs),
+        "laundered_answers": sum(1 for v in poisoned if v.laundered),
+    }
+
+
 def render(pairs: Sequence[Pair]) -> str:
     def cell(v: Verdict | None) -> str:
         if v is None:
@@ -996,6 +1010,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument(
         "--no-provisions", action="store_true", help="Score without the provision checker."
     )
+    ap.add_argument("--mlflow", action="store_true", help="Score mode: also log to MLflow.")
     args = ap.parse_args(argv)
     golden = load_golden(GOLDEN_PATH)
     cases = load_cases(args.cases, golden)
@@ -1011,6 +1026,18 @@ def main(argv: list[str] | None = None) -> int:
     provisions = None if args.no_provisions else ProvisionChecker(Corpus.load(settings.chunks_path))
     if args.score:
         print(score_report(cases, args.score, args.clean_run, args.cases, provisions))
+        if args.mlflow:
+            from citeshield.observability import log_eval_run
+
+            lines = load_adversarial(args.score / "adversarial.jsonl")
+            delivered = {
+                r.case_id: r.delivery() for r in lines if r.condition is Condition.POISONED
+            }
+            counts = poisoned_counts(compare(cases, run_records(args.score), delivered, provisions))
+            meta_path = args.score / "meta.json"
+            meta = json.loads(meta_path.read_text("utf-8")) if meta_path.exists() else {}
+            meta.setdefault("run_id", args.score.name)
+            log_eval_run(meta, counts, kind="adversarial")
         return 0
 
     from citeshield.agent.factory import build_agent

@@ -393,13 +393,17 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument(
         "--reviewed-only", action="store_true", help="Score only human-reviewed golden items."
     )
+    ap.add_argument("--mlflow", action="store_true", help="Also log each run to MLflow.")
     args = ap.parse_args(argv)
 
     golden = load_golden(args.golden)
     parts = []
     for run_dir in args.runs:
         try:
-            parts.append(render(evaluate_run(run_dir, golden, reviewed_only=args.reviewed_only)))
+            result = evaluate_run(run_dir, golden, reviewed_only=args.reviewed_only)
+            parts.append(render(result))
+            if args.mlflow:
+                _log_mlflow(run_dir, result)
         except LabelError as e:
             print(f"{run_dir}: cannot score against trusted labels: {e}", file=sys.stderr)
             return 2
@@ -408,6 +412,19 @@ def main(argv: list[str] | None = None) -> int:
     if args.out:
         args.out.write_text(text, encoding="utf-8")
     return 0
+
+
+def _log_mlflow(run_dir: Path, result: dict[str, Any]) -> None:
+    from citeshield.observability import log_eval_run
+
+    meta_path = run_dir / "meta.json"
+    meta = json.loads(meta_path.read_text("utf-8")) if meta_path.exists() else {}
+    meta.setdefault("run_id", run_dir.name)
+    metrics: dict[str, Any] = {k: r.value for k, r in result["rates"].items()}
+    metrics |= {f"{k}_count": r.count for k, r in result["rates"].items()}
+    metrics |= {f"{k}_n": r.denominator for k, r in result["rates"].items()}
+    log_eval_run(meta, metrics, kind="refusal-eval",
+                 artifacts={"outcomes.json": result["outcomes"]})  # fmt: skip
 
 
 if __name__ == "__main__":

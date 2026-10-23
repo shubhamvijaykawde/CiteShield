@@ -28,10 +28,15 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("question")
     ap.add_argument("--regulation", action="append")
     ap.add_argument("--json", action="store_true", help="Print the full final payload.")
+    ap.add_argument("--mode", choices=("answer", "compare", "checklist"), default="answer")
     args = ap.parse_args(argv)
 
+    from citeshield.observability import traced
+
     agent = build_agent()
-    run = agent.run(args.question, regulations=args.regulation, emit=_print_event)
+    inputs = {"regulations": args.regulation, "mode": args.mode}
+    with traced(_print_event, args.question, inputs, agent.meta) as emit:
+        run = agent.run(args.question, regulations=args.regulation, emit=emit, mode=args.mode)
     a = run.answer
     print(f"\n== {a.status.value}" + (f" ({a.refusal_reason.value})" if a.refusal_reason else ""))
     print(a.summary)

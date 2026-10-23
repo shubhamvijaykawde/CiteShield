@@ -25,7 +25,18 @@ jobs:
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run mypy src
-      - run: uv run pytest
+      - name: Security and verification regression gate
+        # Blocking, deterministic: unsupported and partly supported claims, invalid,
+        # fabricated and untrusted citations, quote mismatches, refusal policy, poisoned
+        # retrieval and tool output (delivery, adoption, attribution), nonexistent provision
+        # references, and the web API. Scripted LLMs and NLI stand-ins: this checks the
+        # pipeline's rules, not a model's faithfulness on new questions.
+        run: >-
+          uv run pytest tests/unit/test_verification.py tests/unit/test_conjuncts.py
+          tests/unit/test_policy.py tests/unit/test_refusal_eval.py tests/unit/test_adversarial.py
+          tests/unit/test_provisions.py tests/unit/test_api.py
+      - name: Full test suite
+        run: uv run pytest
 
   docker-build:
     # Builds the API image (CPU torch) to keep the Dockerfile working; nothing is pushed or run.

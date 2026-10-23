@@ -126,3 +126,24 @@ def test_single_clause_claims_are_unchanged(corpus: Corpus) -> None:
     )
     assert report.claims[0].verdict is ClaimVerdict.SUPPORTED
     assert len(nli.pairs) == 1  # no extra NLI work for a claim with one clause
+
+
+# ------------------------------------------------------------------------ known edge cases
+
+QUALIFIED = f"{EXEMPT_PART}, except for widgets sold to consumers."
+
+
+def test_unsupported_qualifier_is_not_split_out() -> None:
+    # Documented limit: a qualifier inside one clause is not a separate part. Whether the
+    # claim passes is decided by the NLI model on the whole sentence alone.
+    assert split_conjuncts(QUALIFIED) == []
+
+
+def test_unsupported_qualifier_fails_only_if_nli_rejects_the_sentence(corpus: Corpus) -> None:
+    draft = answer((QUALIFIED, [(P2, EXEMPT_QUOTE)]))
+    rejecting = Verifier(corpus, RuleNLI({QUALIFIED: NEUTRAL, EXEMPT_PART: SUPPORTED}))
+    report = rejecting.verify(draft, evidence(corpus, P2, PTA))
+    assert report.claims[0].verdict is ClaimVerdict.UNSUPPORTED
+    accepting = Verifier(corpus, RuleNLI({QUALIFIED: SUPPORTED}))
+    report = accepting.verify(draft, evidence(corpus, P2, PTA))
+    assert report.claims[0].verdict is ClaimVerdict.SUPPORTED  # no structural backstop

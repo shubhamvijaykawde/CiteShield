@@ -3,57 +3,187 @@
 A cited, injection-resistant agent that answers compliance questions over public EU legal
 texts (GDPR, AI Act, DSA, NIS2, Data Act) and refuses when the evidence is thin.
 
-> Not legal advice. CiteShield points you to the paragraphs that matter; it does not replace a lawyer.
+> **Local demonstration project.** CiteShield runs on your own machine with a local model
+> (Ollama `qwen3:4b`); **no public demo is hosted**. It gives experimental legal
+> information, not legal advice or a compliance certification.
 
-## Status
+Version 0.1.0 is the final portfolio release; research is frozen. **[RELEASE.md](RELEASE.md)**
+has the verified results, their definitions and denominators, the security findings and the
+known limitations.
 
-Version 0.1.0 is the final local portfolio release; research is frozen. **[RELEASE.md](RELEASE.md)**
-has the feature status table, the verified results, the adversarial findings and the known
-limitations.
+## What it does
 
-| feature | status |
+You ask a question about one of five EU regulations, compare provisions, or request a
+compliance checklist. CiteShield first researches the official texts with search tools,
+then drafts an answer as structured JSON (`AgentAnswer`, a Pydantic model). In that answer
+every claim carries a paragraph-level citation and a verbatim quote.
+
+Before you see anything, a verifier checks each citation and quote against the canonical
+corpus. An NLI model then checks that the cited text entails each claim, and each
+coordinated clause in it. Anything unsupported is removed, and the answer is marked
+partial. When nothing survives, or the question is out of scope, you get a typed refusal
+with a reason.
+
+| capability | status |
 |---|---|
-| Ingestion, data contract, quarantine | implemented, tested |
-| Hybrid retrieval + reranker | implemented, evaluated |
-| LangGraph agent, structured answers, refusal policy (Claude or local Ollama) | implemented, evaluated on a 14-question local subset (single runs) |
-| Claim-level verifier (citations, quotes, NLI, coordinated clauses) | implemented; thresholds provisional |
-| Over-refusal and adversarial evaluation (deterministic scoring) | implemented; adversarial results preliminary, defense ablations incomplete |
-| LLM judge | implemented, failed calibration, informational only |
-| FastAPI SSE API, CLI, Docker image, CI | implemented (the image is built in CI, not run end to end) |
-| Claude baseline / blocking quality gate, public demo, MLflow/Langfuse | not implemented |
+| Ingestion with a data contract (identity, version, article/paragraph/point, provenance) and quarantine | implemented, tested |
+| Hybrid dense+sparse retrieval with a reranker, stable chunk ids | implemented, evaluated |
+| LangGraph agent: answer / compare / checklist modes, structured output, refusal policy | implemented, evaluated on 14 questions (single runs) |
+| Claim-level verification (citation, verbatim quote, NLI entailment per claim and clause) | implemented; thresholds provisional |
+| Local browser UI + FastAPI streaming API + CLI | implemented, tested offline; live smoke test in RELEASE.md |
+| Deterministic evaluation: answer metrics, over-refusal, adversarial scoring | implemented |
+| Adversarial evaluation (5 poisoned-content attacks) | **partial**: preliminary, ablations incomplete |
+| LLM judge (qwen3:4b) | implemented, **failed calibration**, informational only |
+| MLflow run tracking, Langfuse tracing | implemented, optional (off by default) |
+| Docker image | implemented, built in CI; not run end to end locally |
+| CI: lint, types, tests, security gate, image build | implemented, no API keys needed |
+| Claude-based quality gate | workflow present, manual only, inactive (needs a key and a baseline) |
+| Public hosted demo | not implemented (out of scope) |
 
-Detailed reports: [Milestone 6 closeout](eval/results/milestone6_closeout.md),
-[over-refusal](eval/results/milestone7_over_refusal.md),
-[adversarial evaluation and ablations](eval/results/milestone7_adversarial.md).
+Detailed reports: [over-refusal](eval/results/milestone7_over_refusal.md),
+[adversarial evaluation and ablations](eval/results/milestone7_adversarial.md),
+[judge calibration](eval/results/judge_calibration.md),
+[Milestone 6 closeout](eval/results/milestone6_closeout.md).
 
-## Quickstart
+## Run the demo on Windows
 
-On Windows, use `py -m uv` instead of `uv` if `uv` is not on PATH.
+Requirements:
 
-```bash
-uv sync --group dev --extra ml      # CUDA torch on Windows, CPU torch on Linux
-uv run pytest                       # deterministic suite: no models, keys or index needed
-uv run citeshield-index             # embed the committed corpus with bge-m3 into data/index
-uv run citeshield-search "Can I use emotion recognition on employees?"
-uv run citeshield-eval-retrieval    # golden-set retrieval metrics -> eval/results/
+- Windows with Python 3.12 and the `py` launcher;
+- [Ollama](https://ollama.com) with `qwen3:4b` pulled;
+- about 8 GB of free RAM (an NVIDIA GPU helps; the retrieval models run on CPU);
+- roughly 6 GB of disk for the Hugging Face models, downloaded on first start.
 
-cp .env.example .env                # then set ANTHROPIC_API_KEY, or the Ollama settings
-uv run citeshield-ask "Are AI systems used to screen job applicants high-risk?"
-uv run uvicorn citeshield.api.main:app   # POST /ask streams Server-Sent Events
+In PowerShell, from the repository folder:
+
+```powershell
+py -m pip install uv
+py -m uv sync --extra ml
+ollama pull qwen3:4b
+py -m uv run citeshield-index
+powershell -ExecutionPolicy Bypass -File scripts\start-demo.ps1
 ```
 
-`data/processed/chunks.jsonl` is committed; `uv run citeshield-ingest` rebuilds it from the
-official sources.
+- `py -m uv sync --extra ml` installs everything (CUDA torch on Windows).
+- `ollama pull qwen3:4b` is needed once.
+- `citeshield-index` builds `data/index` from the committed corpus, once (a few minutes).
+- `start-demo.ps1` checks the prerequisites and opens http://127.0.0.1:8000.
 
-Docker (CPU; the locally built index and a model cache are mounted):
+The launcher always selects the local Ollama backend (`CITESHIELD_LLM__PROVIDER=ollama`)
+for that process, so the demo never calls a paid API, whatever `.env` contains. It binds the
+server to 127.0.0.1 only. Without the script, the equivalent is:
+
+```powershell
+$env:CITESHIELD_LLM__PROVIDER = "ollama"; $env:CITESHIELD_LLM__OLLAMA_NUM_CTX = "24576"
+$env:CITESHIELD_RETRIEVER__EMBED_DEVICE = "cpu"; $env:CITESHIELD_RETRIEVER__RERANK_DEVICE = "cpu"
+py -m uv run uvicorn citeshield.api.main:app --host 127.0.0.1 --port 8000
+```
+
+### Demo walkthrough
+
+1. **Wait for the status box** (top right) to say *Ready · local Ollama, qwen3:4b*. It shows
+   *Loading* while the models load (one to two minutes). If startup fails, it shows the
+   reason, for example a missing index, and so does `GET /health`.
+2. **Ask a question.** Click an example or type one, choose a mode, optionally limit the
+   regulations, and press *Ask*. Progress streams live: the scope check, tool calls with the
+   provisions they returned, drafting and repairs. A local answer takes about 1–5 minutes.
+3. **Read the answer.** It has:
+   - a status badge (answered / partial / refused) and a summary;
+   - each claim with its source link and verbatim quote;
+   - checklist items in checklist mode;
+   - qualifications;
+   - how many claims passed verification.
+
+   Click a source to see the full official paragraph with its CELEX number, version and an
+   EUR-Lex link.
+4. **Show a refusal.** The Irish corporate-tax example is refused before any research, with
+   the reason *out_of_scope* and a plain-language explanation.
+
+Example questions:
+
+| mode | question | a good answer |
+|---|---|---|
+| answer | Within how many hours must a controller notify a personal data breach to the supervisory authority? | Without undue delay and, where feasible, within 72 hours, citing GDPR Art. 33(1) |
+| answer | What conditions apply to consent, and can a data subject withdraw it? | Consent can be withdrawn at any time; withdrawal does not affect earlier lawful processing (GDPR Art. 7(3)) |
+| compare | Compare the deadlines for reporting a personal data breach under the GDPR with significant incident reporting under NIS2. | GDPR 72 hours (Art. 33(1)) against NIS2 early warning in 24 h and notification in 72 h (Art. 23(4)) |
+| checklist | Give me a checklist of the obligations of providers of high-risk AI systems. | Items from AI Act Art. 16, each with a citation |
+| answer | What is the corporate income tax rate in Ireland? | Refused: outside the corpus |
+
+qwen3:4b is small and varies from run to run. Expect some partial answers, and the
+occasional unnecessary refusal (1 of 11 answerable questions in the last measured run).
+
+## Alternative: Docker (CPU)
 
 ```bash
 docker build -t citeshield .
-docker run --rm -p 8000:8000 -v ./data/index:/app/data/index -v citeshield-models:/models --env-file .env citeshield
+docker run --rm -p 127.0.0.1:8000:8000 -v ./data/index:/app/data/index -v citeshield-models:/models --env-file .env citeshield
 ```
 
-CI (`.github/workflows/ci.yml`) runs ruff, format, mypy, the deterministic test suite and
-the image build, with no API keys or model downloads.
+The image contains the code and the validated corpus. The index (`data/index`, built with
+`citeshield-index`) and the model cache are mounted. For Ollama on the host, set
+`CITESHIELD_LLM__PROVIDER=ollama` and
+`CITESHIELD_LLM__OLLAMA_BASE_URL=http://host.docker.internal:11434` in `.env`. The health
+check uses `GET /ready`. CI builds the image; it has not been run end to end on the
+development laptop.
+
+## Tests, evaluation and CI
+
+```powershell
+py -m uv sync --group dev --extra ml
+py -m uv run ruff check .; py -m uv run ruff format --check .; py -m uv run mypy src
+py -m uv run pytest
+py -m uv run citeshield-eval-refusal eval/runs/<run_id>
+py -m uv run citeshield-eval-adversarial --score eval/runs/<adv_run_id>
+```
+
+- `pytest` runs the deterministic suite: no models, keys or index needed.
+- `citeshield-eval-refusal` scores over-refusal, coverage, correct and under-refusal, and
+  invalid outputs.
+- `citeshield-eval-adversarial --score` reports attack delivery and success, with clean
+  controls.
+- Live evaluations, which call the LLM, are `citeshield-eval --subset local` and
+  `citeshield-eval-adversarial --run-id ...`. Run records go to `eval/runs/` (gitignored).
+
+CI (`.github/workflows/ci.yml`) runs on every pull request without secrets:
+
+- ruff, format and mypy;
+- a **blocking security and verification gate**: unsupported and partly supported claims,
+  invalid, fabricated and untrusted citations, quote mismatches, the refusal policy,
+  poisoned retrieval and tool output, and the web API;
+- the full suite;
+- a Docker image build.
+
+These tests use scripted LLMs and NLI stand-ins. They check the pipeline's rules, not a
+model's faithfulness on new questions.
+
+The model-quality gate (`eval-gate.yml`, Claude, faithfulness and citation regressions
+against a baseline) is manual-only. It fails explicitly when its API key or baseline is
+missing.
+
+## Observability (optional)
+
+```powershell
+py -m uv sync --extra ml --extra observability
+```
+
+- **MLflow:** add `--mlflow` to `citeshield-eval`, `citeshield-eval-refusal` or
+  `citeshield-eval-adversarial --score`. Each run is logged to `./mlruns` (gitignored; MLflow
+  3's deprecated file store, which the adapter enables with `MLFLOW_ALLOW_FILE_STORE=true`),
+  or to `MLFLOW_TRACKING_URI`. It records the run identity (models, prompt versions, config
+  hashes, corpus, golden set, git commit), every numeric metric, and the metadata as an
+  artifact. No cost is logged for Ollama, which does not bill.
+- **Langfuse:** set `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` and `LANGFUSE_BASE_URL`
+  (cloud or self-hosted). Each API or CLI request then becomes a trace containing:
+  - an agent observation;
+  - the guard;
+  - one retriever/tool observation per call;
+  - one generation per LLM call, with only provider-reported token counts;
+  - warning events for rejected drafts and failed verification;
+  - the outcome (status, refusal reason, citations, support ratio).
+
+  Without keys nothing is sent, and the demo and tests run unchanged.
+  `CITESHIELD_TRACING=off` disables it. The adapter is unit-tested against a fake client; it
+  has not been exercised against a live Langfuse server.
 
 ## Agent
 
@@ -195,17 +325,19 @@ the lower end of its interval are >= 0.7; otherwise it is "below target" or "ins
 data". Dev disagreements are listed for prompt iteration; held-out ones are only counted.
 Results go to `eval/results/judge_calibration.md`. Labels come from one annotator.
 
-**CI gate** (`.github/workflows/eval-gate.yml`): on PRs it runs the smoke subset against
-Claude and compares the result with `eval/baselines/anthropic.json`. It fails if
+**Model-quality gate** (`.github/workflows/eval-gate.yml`, started manually; not part of the
+required PR checks). It runs the smoke subset against Claude and compares the result with
+`eval/baselines/anthropic.json`. It fails if
 faithfulness drops by more than 0.03 or falls below 0.85, citation precision drops by more
 than 0.03, refusal F1 drops by more than 0.05, or schema validity is below 100%. A run made
 on a different subset, golden set, corpus or set of models is reported as not comparable;
 it never counts as a pass. Comparability also covers the Ollama model digest, the LLM
 decoding options (`num_ctx`, `num_predict`) and the devices and weight dtypes the models
 actually loaded with. Prompts and configs may differ from the baseline: they are what the
-gate tests. The gate exits 0 (pass), 1 (regression) or 2 (not comparable / no baseline),
-and posts its metrics table as a PR comment. Until `eval/baselines/anthropic.json` exists
-the job is skipped with a notice.
+gate tests. The gate exits 0 (pass), 1 (regression) or 2 (not comparable / no baseline);
+both 1 and 2 fail the job. The job also fails, with an explanation, if the
+`ANTHROPIC_API_KEY` secret or the baseline file is missing, so it can never pass as a
+no-op. Neither exists yet, so no model-quality gate has run.
 
 **Gates per provider.** The thresholds above apply to Claude only. For local Ollama
 (qwen3:4b) only the deterministic checks block: schema validity below 100% and any crash.

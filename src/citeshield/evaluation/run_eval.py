@@ -417,6 +417,7 @@ def main(argv: list[str] | None = None) -> int:
         default=DEFAULT_EVAL_DEVICE,
         help=f"Reranker device for the run (default {DEFAULT_EVAL_DEVICE}; auto = settings).",
     )
+    ap.add_argument("--mlflow", action="store_true", help="Also log the run to MLflow.")
     args = ap.parse_args(argv)
 
     items = load_golden(args.golden)
@@ -481,6 +482,11 @@ def main(argv: list[str] | None = None) -> int:
     if judge:
         judge_records(judge, load_records(run_dir / "answers.jsonl"), run_dir / "judge.jsonl")
     result = score_run(run_dir, corpus, judge.meta if judge else None)
+    if args.mlflow:
+        from citeshield.observability import log_eval_run
+
+        log_eval_run(result["meta"], result["metrics"], kind="answer-eval",
+                     artifacts={"by_category.json": result["by_category"]})  # fmt: skip
     print(markdown(result["meta"], result["metrics"], result["by_category"], result["crashes"]))
     print(f"run written to {run_dir}")
     return 0

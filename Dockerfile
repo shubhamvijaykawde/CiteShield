@@ -8,8 +8,11 @@
 #     (CITESHIELD_LLM__PROVIDER=ollama, CITESHIELD_LLM__OLLAMA_BASE_URL=http://host.docker.internal:11434).
 #
 #   docker build -t citeshield .
-#   docker run --rm -p 8000:8000 -v ./data/index:/app/data/index -v citeshield-models:/models \
-#     --env-file .env citeshield
+#   docker run --rm -p 127.0.0.1:8000:8000 -v ./data/index:/app/data/index \
+#     -v citeshield-models:/models --env-file .env citeshield
+#
+# The browser UI is at http://127.0.0.1:8000/. Publishing on 127.0.0.1 keeps it off the
+# network. Without the index the server still starts and GET /health explains what is missing.
 FROM python:3.12-slim-bookworm
 
 COPY --from=ghcr.io/astral-sh/uv:0.13.4 /uv /uvx /bin/
@@ -35,7 +38,8 @@ RUN useradd --create-home --uid 1000 app && mkdir -p /models /app/data/index \
 USER app
 
 EXPOSE 8000
-# /health answers once the encoder, reranker and NLI model are loaded (first start downloads them).
+# /ready returns 200 once the encoder, reranker and NLI model are loaded (the first start
+# downloads them); /health always answers and reports loading / ok / error with the reason.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=600s --retries=3 \
-    CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4)"]
+    CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=4)"]
 CMD ["uv", "run", "--no-sync", "uvicorn", "citeshield.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
