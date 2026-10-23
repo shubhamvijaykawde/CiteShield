@@ -8,7 +8,6 @@ from typing import Any
 
 import pytest
 
-from citeshield.agent.graph import salvage
 from citeshield.agent.policy import finalize
 from citeshield.contracts.answer import AgentAnswer
 from citeshield.evaluation import refusal_eval as rv
@@ -104,11 +103,32 @@ def test_outcome(rec: AnswerRecord, expected: rv.Outcome) -> None:
 
 
 def test_salvage_fallback_refusal_is_invalid_output_not_refusal() -> None:
-    # graph.salvage: the draft stayed malformed after repair and nothing could be kept.
-    rec = record(A, salvage(None, {}, ["claims.0.citations: field required"]))
-    assert rec.answer is not None and rec.answer.status.value == "refused"
+    # What a salvage refusal looks like after policy.finalize: a plain refusal, no caveats.
+    rec = record(A, refused(), salvaged=True)
     assert rv.outcome(rec) is Outcome.INVALID_OUTPUT
     assert rv.refusal_source(rec) is None
+    # A salvaged partial answer still has cited claims: it stays substantive.
+    assert rv.outcome(record(A, PARTIAL, salvaged=True)) is Outcome.PARTIAL
+    # A deliberate refusal written during a successful repair is not salvage.
+    assert rv.outcome(record(A, refused(), salvaged=False, draft_rejections=[["e"]])) is (
+        Outcome.REFUSED
+    )
+
+
+@pytest.mark.parametrize(
+    ("rejections", "expected"),
+    [
+        ([], Outcome.REFUSED),  # before M7: no rejection details, cannot tell
+        ([["quote too long"]], Outcome.REFUSED),  # one rejection, then a valid refusal
+        ([["quote too long"], ["quote too long"]], Outcome.INVALID_OUTPUT),  # budget spent
+    ],
+)
+def test_salvage_inferred_for_records_without_the_flag(
+    rejections: list[list[str]], expected: rv.Outcome
+) -> None:
+    rec = record(A, refused(), draft_rejections=rejections)
+    assert rec.salvaged is None
+    assert rv.outcome(rec) is expected
 
 
 # ------------------------------------------------------------------------ refusal stages
@@ -156,7 +176,7 @@ def test_rates_counts_and_denominators() -> None:
         record(ans[4], refused()),
         record(ans[5], error="LLMContextExceeded: too long"),
         record(ans[6], error="ReadTimeout: timed out"),
-        record(ans[7], salvage(None, {}, ["bad"])),
+        record(ans[7], refused(), salvaged=True),
         record(una[0], refused("out_of_scope"), guard_label="other_law"),
         record(una[1], refused("injection_detected"), guard_label="manipulation"),
         record(una[2], PARTIAL),
@@ -292,3 +312,16 @@ def test_reviewed_only_scores_human_reviewed_items(tmp_path: Path) -> None:
     assert all_items["rates"]["over_refusal_rate"].denominator == 2
     assert reviewed["rates"]["over_refusal_rate"].denominator == 1
     assert reviewed["scope"] == "human-reviewed golden items only (1 of 2)"
+
+
+def test_over_refusals_after_a_rejected_first_draft() -> None:
+    a2, a3 = gold("q003"), gold("q004")
+    recs = [
+        record(A, refused(), first_draft_valid=False),  # refused while repairing a draft
+        record(a2, refused(), first_draft_valid=True),  # refused at the first draft
+        record(a3, ANSWERED, first_draft_valid=False),  # repaired into an answer
+        record(U, refused("out_of_scope"), guard_label="other_law"),
+    ]
+    br = rv.over_refusal_breakdown(rv.score(recs, [A, a2, a3, U]))
+    assert br["source"] == {"draft": 2}
+    assert br["after_rejected_draft"] == {"draft": 1}

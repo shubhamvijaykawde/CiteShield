@@ -30,6 +30,8 @@ class RefusalReason(StrEnum):
     UNSUPPORTED_CLAIMS = "unsupported_claims"
 
 
+QUOTE_MIN_CHARS, QUOTE_MAX_CHARS = 8, 400
+
 VERIFIER_ONLY_REASONS = frozenset(
     {RefusalReason.INVALID_CITATIONS, RefusalReason.UNSUPPORTED_CLAIMS}
 )
@@ -40,8 +42,8 @@ class Citation(BaseModel):
 
     chunk_id: str = Field(description="Must be the id of a chunk returned by a tool in this run.")
     quote: str = Field(
-        min_length=8,
-        max_length=400,
+        min_length=QUOTE_MIN_CHARS,
+        max_length=QUOTE_MAX_CHARS,
         description="Verbatim span from the cited chunk that supports the claim.",
     )
 

@@ -42,6 +42,10 @@ class AnswerRecord(BaseModel):
     # Verifier support ratio of the draft behind the final answer (None: nothing verified).
     support_ratio: float | None = None
     first_draft_valid: bool = False
+    # Validation errors of each rejected draft, in order (empty in records before M7).
+    draft_rejections: list[list[str]] = Field(default_factory=list)
+    # The final answer came from the salvage fallback (None: recorded before M7 phase 2).
+    salvaged: bool | None = None
     schema_valid: bool = False
 
     latency_ms: float = 0.0
@@ -78,6 +82,8 @@ class AnswerRecord(BaseModel):
                 "retrieved": list(run.evidence),
                 "support_ratio": run.verification.support_ratio if run.verification else None,
                 "first_draft_valid": not run.draft_rejections,
+                "draft_rejections": run.draft_rejections,
+                "salvaged": run.salvaged,
                 "schema_valid": _round_trips(run.answer),
                 "latency_ms": round(run.timings_ms.get("total", 0.0), 1),
                 "cost_usd": round(u.cost_usd, 6),

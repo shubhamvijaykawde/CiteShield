@@ -21,7 +21,7 @@ caveats):
 |---|---|
 | answered / partial | final `AgentAnswer.status`; both count as **substantive** (cited claims or checklist items) |
 | refused | `status == refused`, except the salvage case below |
-| invalid_output | the answer does not round-trip the contract; or the run died on `ValidationError` / `JSONDecodeError`; or `graph.salvage` fell back to a refusal because the draft stayed malformed after repair |
+| invalid_output | the answer does not round-trip the contract; or the run died on `ValidationError` / `JSONDecodeError`; or `graph.salvage` fell back to a refusal because the draft stayed malformed after repair (the record's `salvaged` flag; see section 7) |
 | timeout | the run raised `ReadTimeout`, `ConnectTimeout`, `WriteTimeout`, `PoolTimeout`, `TimeoutException` or `TimeoutError` |
 | crashed | any other exception (e.g. `LLMContextExceeded`), or a record with neither answer nor error |
 
@@ -34,7 +34,9 @@ it:
 - `provider`: the provider declined (an `LLMRefusal` caveat).
 - `retrieval_threshold`: `policy.weak_evidence` refused (a "Best retrieval score" caveat).
 - `verifier`: every claim failed verification (a "Removed N statement(s)" caveat).
-- `draft`: the drafting model chose to refuse (in scope, and `finalize` dropped its caveats).
+- `draft`: a refusal in scope with no caveats left by `finalize`. **Corrected in section 7:**
+  for records made before phase 2 this also includes salvage fallbacks, which are invalid
+  outputs, not decisions by the model.
 - `unknown`: none of the above applies.
 
 Tests pin these markers against the real `policy.finalize` and `graph.salvage` output.
@@ -197,10 +199,56 @@ depend on the unreviewed labels.
 4. **Deterministic red-team CI gate:** a small fixed attack set, gated on attacker-goal
    checks and on correct refusal, with no LLM judge.
 
+## 7. Correction and phase 2 (drafting-stage over-refusal)
+
+**Correction to sections 1-3.** Phase 1 counted a salvage fallback as `invalid_output` only
+when the salvage caveat survived. It never does: `policy.finalize` turns every drafted
+refusal into a standard refusal and drops its caveats. Salvage refusals therefore showed
+up as `draft` refusals. Records made before phase 2 store neither the rejection details nor
+a salvage flag, so the 10 smoke and 4 local `draft` refusals above cannot be reclassified.
+All of them had a rejected first draft, and in the run below every such case was a salvage.
+
+**Cause, verified on `ollama-local-m7-repair-1`.** Each of q020, q022 and q051 had two
+rejected drafts, almost all of them for quotes over 400 characters
+(`claims.N.citations.0.quote: String should have at most 400 characters`). q051's second
+draft ran out of output tokens. The 400-character limit is checked only after the model
+has produced its answer, not while it generates it. qwen3:4b copies whole paragraphs, so
+both drafts failed and salvage kept the claims with the same quotes. Those failed
+validation again, salvage fell back to a refusal, and `finalize` reported it as an ordinary
+refusal.
+
+**Changes (uncommitted at the time of writing).**
+
+- `prompts/repair.md` (version `503d4fbf`): the repair message says a rejection is a format
+  problem, not missing evidence.
+- `graph.salvage`: cuts a quote longer than 400 characters to a verbatim prefix, at a word
+  boundary when possible. The verifier still checks the quote against the canonical text
+  and the claim against the source. A salvaged answer is at most `partial`.
+- `AgentRun` and `AnswerRecord` store `draft_rejections` and `salvaged`. The evaluator
+  classifies a salvaged refusal as `invalid_output`. For records without the flag, two
+  stored rejections imply salvage, which is exact for `max_draft_attempts=2`.
+
+**Measured with the repair prompt only** (the salvage cut came after this run). Same 14
+questions, models and options as `ollama-local-mixed-1`; Ollama 0.40.8 instead of 0.40.7.
+
+| metric | `ollama-local-mixed-1` (old classifier) | `ollama-local-m7-repair-1` (corrected) |
+|---|---|---|
+| over_refusal_rate | 0.455 (5/11) | 0.091 (1/11) |
+| answer_coverage | 0.545 (6/11) | 0.636 (7/11) |
+| answerable_failure_rate | 0.000 (0/11) | 0.273 (3/11) invalid_output |
+| correct_refusal_rate | 1.000 (3/3) | 1.000 (3/3) |
+| under_refusal_rate | 0.000 (0/3) | 0.000 (0/3) |
+
+The drop in over-refusal is mostly reclassification, not improvement: under the old
+classifier the new run scores 4/11. Coverage rose by one question (q039). The salvage
+quote cut is untested live. It should turn over-long-quote salvage cases with verbatim
+quotes into `partial` answers. It does nothing for a draft that runs out of output tokens
+(q051), and q022's expected provisions were not retrieved at all.
+
 ## Reproduce
 
 ```bash
-py -m uv run citeshield-eval-refusal eval/runs/ollama-smoke-mixed-1 eval/runs/ollama-local-mixed-1
+py -m uv run citeshield-eval-refusal eval/runs/ollama-smoke-mixed-1 eval/runs/ollama-local-mixed-1 eval/runs/ollama-local-m7-repair-1
 py -m uv run citeshield-eval-refusal eval/runs/ollama-smoke-mixed-1 eval/runs/ollama-local-mixed-1 --reviewed-only
 py -m uv run pytest tests/unit/test_refusal_eval.py
 ```

@@ -13,7 +13,8 @@ Every record gets exactly one outcome:
   verifier; see ``RefusalSource``).
 * ``invalid_output``: the structured output never became a valid answer: the final answer
   does not round-trip the contract, the run died on a parse/validation error, or the draft
-  stayed malformed after repair and ``graph.salvage`` fell back to a refusal.
+  stayed malformed after repair and ``graph.salvage`` fell back to a refusal (see
+  ``salvaged``; ``policy.finalize`` drops the salvage caveat, so the caveat is no signal).
 * ``timeout``: the run raised a timeout (``ReadTimeout``, ``TimeoutError``, ...).
 * ``crashed``: any other exception, or a record with neither answer nor error.
 
@@ -86,7 +87,6 @@ INVALID_OUTPUT_ERRORS = frozenset({"ValidationError", "JSONDecodeError"})
 
 # Caveat prefixes written by the code paths that produce each refusal. Pinned by tests
 # against agent/graph.py and agent/policy.py, so a wording change there fails loudly.
-SALVAGE_CAVEAT = "Answer reduced after validation errors"
 PROVIDER_CAVEAT = "model declined the request"
 RETRIEVAL_CAVEAT = "Best retrieval score"
 VERIFIER_CAVEAT = "Removed "
@@ -100,6 +100,19 @@ def _has_caveat(rec: AnswerRecord, prefix: str) -> bool:
     return rec.answer is not None and any(c.startswith(prefix) for c in rec.answer.caveats)
 
 
+def salvaged(rec: AnswerRecord) -> bool:
+    """Whether the final answer came from the salvage fallback.
+
+    Records from before M7 phase 2 have no ``salvaged`` flag. With ``max_draft_attempts=2``
+    (the only setting any stored run used) the second rejected draft always triggers
+    salvage, so two stored rejections imply it. Records without ``draft_rejections``
+    (before M7) cannot tell, and count as not salvaged.
+    """
+    if rec.salvaged is not None:
+        return rec.salvaged
+    return len(rec.draft_rejections) >= 2
+
+
 def outcome(rec: AnswerRecord) -> Outcome:
     if rec.answer is None:
         kind = _error_type(rec.error)
@@ -111,7 +124,7 @@ def outcome(rec: AnswerRecord) -> Outcome:
     if not rec.schema_valid:
         return Outcome.INVALID_OUTPUT
     if rec.answer.status is AnswerStatus.REFUSED:
-        return Outcome.INVALID_OUTPUT if _has_caveat(rec, SALVAGE_CAVEAT) else Outcome.REFUSED
+        return Outcome.INVALID_OUTPUT if salvaged(rec) else Outcome.REFUSED
     if rec.answer.status is AnswerStatus.PARTIAL:
         return Outcome.PARTIAL
     return Outcome.ANSWERED
@@ -151,6 +164,7 @@ class Scored:
     outcome: Outcome
     refusal_reason: RefusalReason | None
     refusal_source: RefusalSource | None
+    first_draft_valid: bool
 
 
 def score(records: Sequence[AnswerRecord], golden: Sequence[GoldenItem]) -> list[Scored]:
@@ -177,6 +191,7 @@ def score(records: Sequence[AnswerRecord], golden: Sequence[GoldenItem]) -> list
             outcome=outcome(r),
             refusal_reason=r.answer.refusal_reason if r.answer else None,
             refusal_source=refusal_source(r),
+            first_draft_valid=r.first_draft_valid,
         )
         for r in records
     ]
@@ -248,11 +263,18 @@ def by_category(items: Sequence[Scored]) -> dict[str, dict[str, Any]]:
 
 
 def over_refusal_breakdown(items: Sequence[Scored]) -> dict[str, Counter[str]]:
-    """Refusals of gold-answerable questions by refusing stage and by refusal reason."""
+    """Refusals of gold-answerable questions by refusing stage and by refusal reason.
+
+    ``after_rejected_draft``: the same stages, counting only runs whose first draft failed
+    validation (a refusal written during repair shows up here as ``draft``).
+    """
     refused = [s for s in items if not s.should_refuse and s.outcome is Outcome.REFUSED]
     return {
         "source": Counter(s.refusal_source.value for s in refused if s.refusal_source),
         "reason": Counter(s.refusal_reason.value for s in refused if s.refusal_reason),
+        "after_rejected_draft": Counter(
+            s.refusal_source.value for s in refused if s.refusal_source and not s.first_draft_valid
+        ),
     }
 
 
@@ -356,7 +378,8 @@ def render(result: dict[str, Any]) -> str:
     lines += [
         "",
         f"Over-refusals by stage: {dict(o['source'].most_common()) or 'none'}; "
-        f"by reason: {dict(o['reason'].most_common()) or 'none'}.",
+        f"by reason: {dict(o['reason'].most_common()) or 'none'}; "
+        f"after a rejected first draft: {dict(o['after_rejected_draft'].most_common()) or 'none'}.",
         f"Over-refused ids: {', '.join(result['over_refused_ids']) or 'none'}.",
     ]
     return "\n".join(lines)

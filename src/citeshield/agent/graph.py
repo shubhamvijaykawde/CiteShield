@@ -35,7 +35,13 @@ from citeshield.agent.llm import LLM, LLMRefusal, LLMResponse, Usage
 from citeshield.agent.schema import draft_schema, guard_schema
 from citeshield.agent.tools import EvidenceItem, ToolExecutor
 from citeshield.config import config_hash
-from citeshield.contracts.answer import AgentAnswer, AnswerStatus, RefusalReason
+from citeshield.contracts.answer import (
+    QUOTE_MAX_CHARS,
+    QUOTE_MIN_CHARS,
+    AgentAnswer,
+    AnswerStatus,
+    RefusalReason,
+)
 from citeshield.contracts.chunk import corpus_hash
 from citeshield.contracts.verification import VerificationReport
 from citeshield.verify.verifier import Verifier
@@ -85,6 +91,7 @@ class AgentState(TypedDict, total=False):
     timings_ms: dict[str, float]
     llm_log: list[dict[str, Any]]
     draft_rejections: list[list[str]]
+    salvaged: bool  # the candidate came from salvage(), not from a valid draft
 
 
 @dataclass
@@ -101,6 +108,8 @@ class AgentRun:
     llm_log: list[dict[str, Any]] = field(default_factory=list)
     # Validation errors of each rejected draft, in order.
     draft_rejections: list[list[str]] = field(default_factory=list)
+    # The final answer came from salvage() after the repair budget ran out.
+    salvaged: bool = False
     # Report for the draft the final answer was derived from (None: guard refusal).
     verification: VerificationReport | None = None
 
@@ -195,6 +204,7 @@ class CiteShieldAgent:
             meta=self.meta,
             llm_log=final.get("llm_log", []),
             draft_rejections=final.get("draft_rejections", []),
+            salvaged=final.get("salvaged", False),
             verification=final.get("verification"),
         )
         emit("final", serialize_run(run))
@@ -427,7 +437,7 @@ class CiteShieldAgent:
                 errors += citation_errors(answer, state["evidence"])
 
         if not errors and answer is not None:
-            return {"candidate": answer, "draft_errors": []}
+            return {"candidate": answer, "draft_errors": [], "salvaged": False}
 
         _emitter(config)("draft_rejected", {"errors": errors[:10]})
         # Every attempt's errors are kept; the refusal caveat only shows the last ones.
@@ -435,14 +445,22 @@ class CiteShieldAgent:
         # A verification revision does not use up the structural repair budget.
         structural_attempts = state["draft_attempts"] - state["verify_revisions"]
         if structural_attempts < self.cfg.max_draft_attempts:
+            # Tell the model a rejected draft is a format problem, not missing evidence, so
+            # that it does not "fix" it by refusing (the refused branch is always valid).
             feedback = (
-                "Your answer was rejected. Fix these problems and return the full corrected "
-                "JSON:\n- " + "\n- ".join(errors[:20])
+                "Your answer was rejected:\n- "
+                + "\n- ".join(errors[:20])
+                + "\n\n"
+                + prompts.load("repair").text
             )
             messages = [*state["messages"], {"role": "user", "content": feedback}]
             return {"messages": messages, "draft_errors": errors}
         # The salvaged answer still goes through verification.
-        return {"candidate": salvage(draft, state["evidence"], errors), "draft_errors": errors}
+        return {
+            "candidate": salvage(draft, state["evidence"], errors),
+            "draft_errors": errors,
+            "salvaged": True,
+        }
 
     def _after_validate(self, state: AgentState) -> Literal["draft", "verify"]:
         return "verify" if state.get("candidate") is not None else "draft"
@@ -542,13 +560,21 @@ def citation_errors(answer: AgentAnswer, evidence: dict[str, EvidenceItem]) -> l
 def salvage(
     draft: dict[str, Any] | None, evidence: dict[str, EvidenceItem], errors: list[str]
 ) -> AgentAnswer:
-    """Last resort after repairs: keep only claims whose citations all resolve."""
+    """Last resort after repairs: keep only claims whose citations all resolve.
+
+    Over-long quotes are cut to a prefix (qwen3:4b copies whole paragraphs, which the
+    contract rejects): a prefix of a quote is still verbatim, and the verifier still checks
+    it against the canonical text and the claim against the source.
+    """
     note = f"Answer reduced after validation errors: {'; '.join(errors[:3])}"
     if draft:
         good = [
-            cl
+            {**cl, "citations": [_fit_quote(ci) for ci in cl["citations"]]}
             for cl in draft.get("claims") or []
-            if cl.get("citations") and all(ci.get("chunk_id") in evidence for ci in cl["citations"])
+            if isinstance(cl, dict)
+            and cl.get("citations")
+            and all(isinstance(ci, dict) for ci in cl["citations"])
+            and all(ci.get("chunk_id") in evidence for ci in cl["citations"])
         ]
         if good:
             try:
@@ -568,6 +594,19 @@ def salvage(
         "I could not produce an answer that is fully supported by the sources I retrieved.",
         caveats=[note],
     )
+
+
+def _fit_quote(citation: dict[str, Any]) -> dict[str, Any]:
+    """Cut a quote longer than the contract allows at the last word boundary that fits."""
+    quote = citation.get("quote")
+    if not isinstance(quote, str) or len(quote) <= QUOTE_MAX_CHARS:
+        return citation
+    cut = quote[:QUOTE_MAX_CHARS]
+    if not quote[QUOTE_MAX_CHARS].isspace():
+        space = cut.rfind(" ")
+        if space >= QUOTE_MIN_CHARS:
+            cut = cut[:space]
+    return {**citation, "quote": cut.rstrip()}
 
 
 def serialize_run(run: AgentRun) -> dict[str, Any]:

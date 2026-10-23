@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import itertools
 import json
 from typing import Any
@@ -10,14 +11,18 @@ import pytest
 from fastapi.testclient import TestClient
 from qdrant_client import QdrantClient
 
+from citeshield.agent import prompts
 from citeshield.agent.config import AgentConfig
-from citeshield.agent.graph import CiteShieldAgent
+from citeshield.agent.graph import CiteShieldAgent, _fit_quote
 from citeshield.agent.llm import LLMRefusal, LLMResponse
 from citeshield.agent.schema import draft_schema
 from citeshield.agent.tools import EvidenceItem, ToolExecutor, format_sources
 from citeshield.api.main import create_app
 from citeshield.config import IngestConfig
-from citeshield.contracts.answer import AnswerStatus, RefusalReason
+from citeshield.contracts.answer import QUOTE_MAX_CHARS, AnswerStatus, RefusalReason
+from citeshield.evaluation import refusal_eval
+from citeshield.evaluation.golden import Category, GoldenItem
+from citeshield.evaluation.records import AnswerRecord
 from citeshield.ingest.parse_xhtml import ParseResult
 from citeshield.ingest.validate import validate_document
 from citeshield.retrieval.config import RetrieverConfig
@@ -26,7 +31,17 @@ from citeshield.retrieval.expand import Expander
 from citeshield.retrieval.hybrid import HybridSearcher
 from citeshield.retrieval.index import build_index
 from citeshield.retrieval.pipeline import Retriever
-from helpers import HashingEncoder, ScriptedLLM, entail_all, json_turn, text_turn, tool_turn
+from citeshield.verify.verifier import Verifier
+from helpers import (
+    HashingEncoder,
+    RuleNLI,
+    ScriptedLLM,
+    entail_all,
+    json_turn,
+    make_chunk,
+    text_turn,
+    tool_turn,
+)
 
 V = "@oj-2099-01-01"
 P2 = f"32099R0001:art2:p2{V}"
@@ -180,6 +195,184 @@ def test_unparseable_drafts_become_a_refusal(executor: ToolExecutor) -> None:
     assert run.answer.refusal_reason is RefusalReason.INSUFFICIENT_EVIDENCE
 
 
+REFUSED_DRAFT = {
+    "status": "refused",
+    "summary": "The sources do not cover this.",
+    "claims": [],
+    "checklist": [],
+    "refusal_reason": "insufficient_evidence",
+    "caveats": [],
+}
+BAD_ID_DRAFT = draft(("32016R0679:art22:p1@oj-2016-05-04", QUOTE))
+
+
+def _truncated() -> LLMResponse:
+    return dataclasses.replace(
+        text_turn('{"status": "answered", "summary": "Und'), stop_reason="max_tokens"
+    )
+
+
+@pytest.mark.parametrize(
+    ("first", "error"),
+    [
+        (json_turn(BAD_ID_DRAFT), "was not returned by any tool"),
+        (_truncated(), "output hit the output-token limit"),
+    ],
+)
+def test_repair_feedback_says_a_rejection_is_not_missing_evidence(
+    executor: ToolExecutor, first: LLMResponse, error: str
+) -> None:
+    # Milestone 7: qwen3:4b answered a rejected draft's repair request with a refusal.
+    turns = [tool_turn(READ_P2), text_turn("ok"), first, json_turn(draft((P2, QUOTE)))]
+    run, llm, _ = run_agent(executor, turns)
+    assert run.answer.status is AnswerStatus.ANSWERED
+    repair_msg = llm.calls[-1]["messages"][-1]["content"]
+    assert error in repair_msg
+    assert repair_msg.endswith(prompts.load("repair").text)
+    assert "not a finding that the sources are insufficient" in repair_msg
+    assert "Do not switch to `refused` because of these errors" in repair_msg
+    assert len(run.draft_rejections) == 1
+
+
+def test_refusal_during_repair_is_still_a_refusal(executor: ToolExecutor) -> None:
+    # The model may still refuse when the sources do not support an answer.
+    turns = [tool_turn(READ_P2), text_turn("ok"), json_turn(BAD_ID_DRAFT), json_turn(REFUSED_DRAFT)]
+    run, _, _ = run_agent(executor, turns)
+    assert run.answer.status is AnswerStatus.REFUSED
+    assert run.answer.refusal_reason is RefusalReason.INSUFFICIENT_EVIDENCE
+    assert run.answer.claims == [] and len(run.draft_rejections) == 1
+
+
+def test_first_draft_refusal_needs_no_repair(executor: ToolExecutor) -> None:
+    turns = [tool_turn(READ_P2), text_turn("nothing relevant"), json_turn(REFUSED_DRAFT)]
+    run, llm, _ = run_agent(executor, turns)
+    assert run.answer.status is AnswerStatus.REFUSED
+    assert run.draft_rejections == []
+    assert sum(1 for c in llm.calls if c.get("json_schema") and c["model"] == "agent-model") == 1
+
+
+def test_repaired_answer_is_still_verified(executor: ToolExecutor) -> None:
+    unsupported = draft((P2, QUOTE))
+    turns = [
+        tool_turn(READ_P2),
+        text_turn("ok"),
+        json_turn(BAD_ID_DRAFT),
+        json_turn(unsupported),  # repaired, valid, but the NLI does not entail it
+        json_turn(unsupported),  # the one verification revision changes nothing
+    ]
+    llm = ScriptedLLM(agent_turns=turns)
+    agent = CiteShieldAgent(llm, executor, CFG, verifier=Verifier(executor.corpus, RuleNLI({})))
+    run = agent.run("Are research widgets exempt?")
+    assert run.answer.status is AnswerStatus.REFUSED
+    assert run.answer.refusal_reason is RefusalReason.UNSUPPORTED_CLAIMS
+
+
+# Milestone 7: qwen3:4b copied whole paragraphs as quotes (> 400 characters). Both drafts
+# were rejected, salvage kept the claims with the same quotes, failed validation again and
+# fell back to a refusal that policy.finalize then reported as a plain refusal.
+LONG_TEXT = (
+    "1. Providers of widgets placed on the market shall keep the technical documentation, "
+    "the declaration of conformity and the records of every widget test at the disposal of "
+    "the national competent authorities for a period of ten years after the widget has been "
+    "placed on the market, and shall make that documentation available to those "
+    "authorities upon a reasoned request, in a language which can be easily understood by "
+    "them, together with the logs automatically generated by the widget, to the extent "
+    "that such logs are under their control by virtue of a contractual arrangement."
+)
+LONG = make_chunk("Long Reg", 9, LONG_TEXT, paragraph=1)
+READ_LONG = ("get_article", {"regulation": "Long Reg", "article": 9, "paragraph": 1})
+
+
+@pytest.fixture
+def long_executor(parsed: ParseResult) -> ToolExecutor:
+    corpus = Corpus([*validate_document(parsed.records, parsed.toc, IngestConfig()).valid, LONG])
+    cfg = RetrieverConfig(collection="test")
+    client = QdrantClient(":memory:")
+    build_index(client, corpus, HashingEncoder(), cfg)
+    searcher = HybridSearcher(client, corpus, HashingEncoder(), cfg)
+    return ToolExecutor(Retriever(searcher, None, Expander(corpus), cfg))
+
+
+def _long_quote_draft(quote: str) -> dict[str, Any]:
+    d = draft((LONG.chunk_id, quote))
+    d["claims"][0]["text"] = "Providers must keep widget test records for ten years."
+    return d
+
+
+def _salvage_run(executor: ToolExecutor, quote: str, drafts: int = 2) -> Any:
+    """Every draft repeats the over-long quote; ``drafts`` > 2 covers a verifier revision."""
+    assert len(quote) > QUOTE_MAX_CHARS
+    turns = [
+        tool_turn(READ_LONG),
+        text_turn("Art. 9(1) sets a ten-year retention period."),
+        *[json_turn(_long_quote_draft(quote)) for _ in range(drafts)],
+    ]
+    run, _, _ = run_agent(executor, turns)
+    assert len(run.draft_rejections) == drafts
+    assert all("at most 400 characters" in r[0] for r in run.draft_rejections)
+    return run
+
+
+def _record(run: Any) -> AnswerRecord:
+    item = GoldenItem(
+        id="q001",
+        question="How long must widget test records be kept?",
+        category=Category.LOOKUP,
+        expected=["Long Reg 9(1)"],
+        reference_answer="Ten years.",
+    )
+    return AnswerRecord.from_run(item, run)
+
+
+def test_salvage_cuts_an_over_long_verbatim_quote_and_keeps_the_claim(
+    long_executor: ToolExecutor,
+) -> None:
+    run = _salvage_run(long_executor, LONG_TEXT)
+    assert run.salvaged
+    assert run.answer.status is AnswerStatus.PARTIAL  # qualified, not presented as complete
+    quote = run.answer.claims[0].citations[0].quote
+    assert len(quote) <= QUOTE_MAX_CHARS and LONG_TEXT.startswith(quote)
+    assert run.verification is not None and run.verification.support_ratio == 1.0
+    rec = _record(run)
+    assert rec.salvaged and refusal_eval.outcome(rec) is refusal_eval.Outcome.PARTIAL
+
+
+def test_salvaged_quote_that_is_not_verbatim_is_still_rejected(
+    long_executor: ToolExecutor,
+) -> None:
+    # Cutting never makes an invented quote acceptable: the verifier checks the prefix too.
+    invented = "Providers shall keep every record forever and " + LONG_TEXT
+    # Salvage, verification fails, one revision, rejected again, salvage again.
+    run = _salvage_run(long_executor, invented, drafts=3)
+    assert run.salvaged
+    assert run.answer.status is AnswerStatus.REFUSED
+    assert run.answer.claims == []
+    # The evaluator counts this as a failed structured output, not a deliberate refusal.
+    rec = _record(run)
+    assert rec.salvaged and refusal_eval.outcome(rec) is refusal_eval.Outcome.INVALID_OUTPUT
+
+
+def test_valid_draft_after_salvage_is_not_marked_salvaged(executor: ToolExecutor) -> None:
+    turns = [tool_turn(READ_P2), text_turn("ok"), json_turn(draft((P2, QUOTE)))]
+    run, _, _ = run_agent(executor, turns)
+    assert not run.salvaged and not _record(run).salvaged
+
+
+@pytest.mark.parametrize(
+    ("quote", "expected"),
+    [
+        ("short quote", "short quote"),
+        ("x" * 400, "x" * 400),
+        ("word " * 100 + "end", ("word " * 80).rstrip()),  # 400th char is a space
+        ("abcdefghi " * 41, ("abcdefghi " * 40).rstrip()),  # cut back to a word boundary
+        ("y" * 450, "y" * 400),  # no space to cut at
+    ],
+)
+def test_fit_quote(quote: str, expected: str) -> None:
+    out = _fit_quote({"chunk_id": "c", "quote": quote})["quote"]
+    assert out == expected and quote.startswith(out) and len(out) <= QUOTE_MAX_CHARS
+
+
 def test_tool_round_cap(executor: ToolExecutor) -> None:
     turns = [tool_turn(READ_P2)] * 3 + [json_turn(draft((P2, QUOTE)))]
     run, llm, _ = run_agent(executor, turns)
@@ -299,3 +492,28 @@ def test_eval_record_from_run(executor: ToolExecutor) -> None:
     assert P2 in rec.retrieved and set(rec.cited) == {P2}
     assert rec.llm_calls == 4
     assert QUOTE in rec.render_answer()
+    assert rec.draft_rejections == []
+
+
+def test_eval_record_keeps_draft_rejections(executor: ToolExecutor) -> None:
+    from citeshield.evaluation.golden import Category, GoldenItem
+    from citeshield.evaluation.records import AnswerRecord
+
+    turns = [tool_turn(READ_P2), text_turn("ok"), json_turn(BAD_ID_DRAFT), json_turn(REFUSED_DRAFT)]
+    run, _, _ = run_agent(executor, turns)
+    item = GoldenItem(
+        id="q001",
+        question="Are research widgets exempt?",
+        category=Category.LOOKUP,
+        expected=["Test Reg 2(2)"],
+        reference_answer="Yes.",
+    )
+    rec = AnswerRecord.from_run(item, run)
+    assert not rec.first_draft_valid
+    assert "was not returned by any tool" in rec.draft_rejections[0][0]
+    again = AnswerRecord.model_validate_json(rec.model_dump_json())
+    assert again.draft_rejections == rec.draft_rejections
+    # Records written before the field existed still load.
+    old = json.loads(rec.model_dump_json())
+    del old["draft_rejections"]
+    assert AnswerRecord.model_validate(old).draft_rejections == []
