@@ -81,23 +81,27 @@ py -m uv run uvicorn citeshield.api.main:app --host 127.0.0.1 --port 8000
 
 ### Demo walkthrough
 
-1. **Wait for the status box** (top right) to say *Ready · local Ollama, qwen3:4b*. It shows
-   *Loading* while the models load (one to two minutes). If startup fails, it shows the
-   reason, for example a missing index, and so does `GET /health`.
-2. **Ask a question.** Click an example or type one, choose a mode, optionally limit the
-   regulations, and press *Ask*. Progress streams live: the scope check, tool calls with the
-   provisions they returned, drafting and repairs. A local answer takes about 1–5 minutes.
+1. **Wait for the status indicator** (top right) to say *Ready · Local · qwen3:4b*. It is
+   amber (*Loading models and index…*) while the models load, which takes one to two
+   minutes. It turns red if startup fails or Ollama or the model is missing, and gives the
+   reason, for example a missing index. `GET /health` reports the same.
+2. **Ask a question.** Choose a mode (*Answer*, *Compare* or *Checklist*). Then click an
+   example or type a question, optionally limit the regulations, and press *Research*
+   (or Ctrl + Enter). The research trace beside the answer streams live: the scope check,
+   tool calls with the provisions they returned, drafting and repairs. A local answer takes
+   about 1–5 minutes. A failed request offers *Retry*.
 3. **Read the answer.** It has:
    - a status badge (answered / partial / refused) and a summary;
-   - each claim with its source link and verbatim quote;
-   - checklist items in checklist mode;
+   - each claim with its verbatim quote and citation;
+   - in compare mode, the claims grouped by regulation side by side;
+   - in checklist mode, a table of obligations, who each applies to, and their citations;
    - qualifications;
    - how many claims passed verification.
 
-   Click a source to see the full official paragraph with its CELEX number, version and an
-   EUR-Lex link.
-4. **Show a refusal.** The Irish corporate-tax example is refused before any research, with
-   the reason *out_of_scope* and a plain-language explanation.
+   Click a citation to see the full official paragraph with the legal act, CELEX number,
+   version, citation id and an EUR-Lex link.
+4. **Show a refusal.** The Irish corporate-tax example is refused before any research. The
+   UI explains why (*Outside the covered law*) and suggests what you can ask instead.
 
 Example questions:
 

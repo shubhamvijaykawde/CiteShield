@@ -146,7 +146,12 @@ def create_app(
         size = request.headers.get("content-length")
         if size is not None and size.isdigit() and int(size) > max_body:
             return JSONResponse({"detail": f"request body over {max_body} bytes"}, 413)
-        return await call_next(request)
+        response = await call_next(request)
+        if request.url.path == "/" or request.url.path.startswith("/static/"):
+            # Revalidate the UI files on every load (cheap 304s), so an updated UI is never
+            # shown with a stale script or stylesheet from the browser cache.
+            response.headers["Cache-Control"] = "no-cache"
+        return response
 
     def get_agent(request: Request) -> CiteShieldAgent:
         state = request.app.state

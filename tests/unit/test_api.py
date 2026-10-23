@@ -84,8 +84,11 @@ def test_browser_ui_is_served_without_external_resources(executor: ToolExecutor)
         page = client.get("/")
         assert page.status_code == 200 and "text/html" in page.headers["content-type"]
         assert "not legal advice" in page.text.lower()
+        assert page.headers["cache-control"] == "no-cache"  # an updated UI is never stale
         for asset in ("/static/app.js", "/static/style.css"):
-            assert client.get(asset).status_code == 200
+            r = client.get(asset)
+            assert r.status_code == 200 and r.headers["cache-control"] == "no-cache"
+        assert "cache-control" not in client.get("/health").headers
     for f in STATIC_DIR.iterdir():
         text = f.read_text("utf-8")
         # No CDN or other network resource: everything is served locally.
