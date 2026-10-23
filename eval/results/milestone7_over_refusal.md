@@ -245,9 +245,92 @@ quote cut is untested live. It should turn over-long-quote salvage cases with ve
 quotes into `partial` answers. It does nothing for a draft that runs out of output tokens
 (q051), and q022's expected provisions were not retrieved at all.
 
+## 8. Post-phase-2 validation run (`ollama-local-m7-salvage-2`)
+
+One bounded run at `0047f2a`, with a clean tree. It used the same 14 questions
+(golden `9aa8049d79c5`), models, Ollama digest, options, devices, dtypes, config hashes and
+prompt versions as `ollama-local-m7-repair-1`, and the same Ollama 0.40.8. The only code
+difference is the salvage quote cut and the `salvaged` flag. No crashes or timeouts; total
+latency 39 minutes. `answers.jsonl` sha256 `d7f07f8eb3d493d0`.
+
+| metric | `mixed-1` (baseline, old classifier) | `m7-repair-1` | `m7-salvage-2` |
+|---|---|---|---|
+| over_refusal_rate | 0.455 (5/11) | 0.091 (1/11) | 0.091 (1/11) |
+| answer_coverage | 0.545 (6/11) | 0.636 (7/11) | 0.727 (8/11) |
+| full / partial answers | 5 / 1 | 6 / 1 | 7 / 1 |
+| invalid_output | 0/11 (cannot tell) | 3/11 | 2/11 |
+| crashed / timeout | 0 / 0 | 0 / 0 | 0 / 0 |
+| correct_refusal_rate | 1.000 (3/3) | 1.000 (3/3) | 1.000 (3/3) |
+| under_refusal_rate | 0.000 (0/3) | 0.000 (0/3) | 0.000 (0/3) |
+
+**Salvage.** Salvage ran 3 times:
+
+- **q039:** salvage kept the answer as `partial`. It had 3 claims (DSA 16(1), 16(2) and
+  16(5)), and one quote was cut to 397 characters. That quote is an exact prefix of DSA
+  16(2) after the verifier's normalisation; the raw text differs only by a line break
+  before "(a)". The verifier accepted all 3 claims (support ratio 1.0). This is the only
+  case where the fix demonstrably acted. A manual check (below) found two problems the
+  verifier does not catch: the cut quote does not itself show what its claim says, and the
+  16(5) claim also asserts something that only 16(4) states.
+- **q020, q051:** the first draft failed on over-long quotes, and the repair draft then ran
+  out of output tokens with 0 characters produced. `salvage` works on the latest draft
+  only, which was empty, so it had nothing to keep. Both remain `invalid_output`.
+
+**Changed outcomes against `m7-repair-1`:**
+
+| id | m7-repair-1 | m7-salvage-2 | attributable to the fix? |
+|---|---|---|---|
+| q039 | answered (one rejected draft) | partial via salvage | yes: salvage path with a cut quote, verified |
+| q022 | invalid_output (salvage) | answered, no rejected draft | no: the first draft was valid this time (variation) |
+| q064 | partial | answered | no: no rejection or salvage (variation) |
+| q034 | refused, verifier | refused, retrieval threshold | no: different research path (variation) |
+
+**Comparability.** The question set, golden labels and evaluation settings are identical
+across the three local runs. The code differs only as described, and the baseline ran on
+Ollama 0.40.7. Each configuration ran once, and qwen3:4b samples, so 3 of the 4 changed
+outcomes are run-to-run variation. Confirmed effect of the salvage cut: 1 question (q039)
+moved from a rejected draft to a verified partial answer. Not confirmed: any change in the
+rate of over-long quotes or in over-refusal. The baseline-to-repair-1 drop in over-refusal
+is reclassification (section 7), not improvement.
+
+**Citation precision 0.929 -> 0.729 (audit).** `metrics.citation_precision` gives, per
+gold-answerable completed item that cites anything, the share of its distinct cited chunks
+that match an expected golden ref at paragraph level. The run value is the unweighted mean
+over those items. The two values therefore cover different item sets: 7 items in
+`m7-repair-1` and 8 in `m7-salvage-2` (q022 was added, at 1.000). A cited paragraph outside
+the expected set counts against precision whether or not it supports its claim.
+
+The drop comes from 5 cited paragraphs outside the expected set in 4 items. The verifier
+compares each claim with the full text of the cited paragraph, not the quote.
+
+| item | non-expected citation | claim checked against the paragraph text | assessment |
+|---|---|---|---|
+| q004 (reviewed) | GDPR 4(11) | consent must be freely given, specific, informed, unambiguous | supported and relevant; golden set incomplete |
+| q064 (unreviewed) | GDPR 28(9) | the contract must be in writing | supported and relevant; golden set incomplete |
+| q075 (unreviewed) | GDPR 99(1) | entry into force on the twentieth day after publication | supported but tangential (the question asks when it applied) |
+| q039 (reviewed) | DSA 16(2) | the notice elements (a)-(d) | supported by the paragraph; the salvage-cut quote shows only the start of (a) |
+| q039 (reviewed) | DSA 16(5) | "timely confirmation of receipt and notify decisions with redress options" | **partly unsupported**: receipt confirmation is in 16(4), not 16(5); the verifier accepted it |
+
+So the drop is mostly disagreement with an incomplete expected citation set. The exception
+is one claim that the NLI verifier passed although half of it is not in the cited text. The
+q039 citation cut also shows a display limit of the salvage fix: a cut quote can omit the
+passage that supports the claim, even though verification uses the full paragraph. Both
+q039 issues are on the salvage path, but the 16(5) problem is a verifier precision limit,
+not caused by the cut. Nothing was changed; the verifier thresholds stay provisional.
+
+**Resources.** Free system RAM fell from 9.7 GB at the start to a minimum of 349 MB
+(sampled every minute). There was no failure, but memory pressure remains real for this
+configuration.
+
+**Remaining causes.** The remaining failures come from repair drafts that run out of
+output tokens (q020, q051): `num_predict` 8192 with thinking enabled. Salvage only sees the
+last draft. Using the latest *parseable* draft would let it reach q020's and q051's first
+drafts. That change is not made here.
+
 ## Reproduce
 
 ```bash
+py -m uv run citeshield-eval-refusal eval/runs/ollama-local-mixed-1 eval/runs/ollama-local-m7-repair-1 eval/runs/ollama-local-m7-salvage-2
 py -m uv run citeshield-eval-refusal eval/runs/ollama-smoke-mixed-1 eval/runs/ollama-local-mixed-1 eval/runs/ollama-local-m7-repair-1
 py -m uv run citeshield-eval-refusal eval/runs/ollama-smoke-mixed-1 eval/runs/ollama-local-mixed-1 --reviewed-only
 py -m uv run pytest tests/unit/test_refusal_eval.py

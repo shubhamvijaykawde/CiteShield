@@ -40,6 +40,7 @@ citeshield-label = "citeshield.evaluation.labeling:main"
 citeshield-calibrate-judge = "citeshield.evaluation.judge_calibration:main"
 citeshield-label-sample = "citeshield.evaluation.label_sample:main"
 citeshield-eval-refusal = "citeshield.evaluation.refusal_eval:main"
+citeshield-eval-adversarial = "citeshield.evaluation.adversarial:main"
 
 # CUDA wheels on the Windows dev box (local GPU indexing); CPU wheels on Linux (CI, Docker, HF Spaces).
 [tool.uv.sources]
