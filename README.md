@@ -1,58 +1,87 @@
 # CiteShield
 
-A cited, injection-resistant agent that answers compliance questions over public EU legal
-texts (GDPR, AI Act, DSA, NIS2, Data Act) and refuses when the evidence is thin.
+**A research agent for EU digital regulation that cites the exact paragraph behind every
+claim, checks each claim against the official text before showing it, and refuses when the
+evidence is not there.**
 
-> **Local demonstration project.** CiteShield runs on your own machine with a local model
-> (Ollama `qwen3:4b`); **no public demo is hosted**. It gives experimental legal
-> information, not legal advice or a compliance certification.
+Ask about the GDPR, AI Act, DSA, NIS2 or Data Act. CiteShield searches the official texts,
+drafts a structured answer in which every claim carries a paragraph-level citation and a
+verbatim quote, then verifies the citation, the quote and the entailment of each claim. It
+removes what fails and marks the answer partial, or returns a typed refusal.
 
-Version 0.1.0 is the final portfolio release; research is frozen. **[RELEASE.md](RELEASE.md)**
-has the verified results, their definitions and denominators, the security findings and the
-known limitations.
+> **Local demonstration project.** The demo runs on your own Windows machine with a local
+> model (Ollama `qwen3:4b`): no API key, no paid calls, **no hosted demo**. It gives
+> experimental legal information, not legal advice or a compliance certification.
 
-## What it does
+[Quickstart](#quickstart-windows) · [How answers work](#how-answers-work) ·
+[Results](#selected-results) · [Limitations](#limitations-and-security-caveats) ·
+[Documentation](#documentation) · [Release notes](RELEASE.md)
 
-You ask a question about one of five EU regulations, compare provisions, or request a
-compliance checklist. CiteShield first researches the official texts with search tools,
-then drafts an answer as structured JSON (`AgentAnswer`, a Pydantic model). In that answer
-every claim carries a paragraph-level citation and a verbatim quote.
+## Why it is interesting
 
-Before you see anything, a verifier checks each citation and quote against the canonical
-corpus. An NLI model then checks that the cited text entails each claim, and each
-coordinated clause in it. Anything unsupported is removed, and the answer is marked
-partial. When nothing survives, or the question is out of scope, you get a typed refusal
-with a reason.
+- **The model never decides whether it is right.** Citation validity, verbatim-quote
+  matching and entailment are computed from the canonical corpus and a local NLI model, per
+  claim *and* per coordinated clause. Verification can only lower an answer's status.
+- **Citations are checkable by construction.** The agent can only cite chunks its own tools
+  returned in this run; fabricated ids, wrong versions, untrusted sources and unretrieved
+  provisions are rejected.
+- **Refusal is a first-class outcome.** Out-of-scope questions, personal legal advice,
+  instruction-change attempts and thin evidence produce a typed, explained refusal.
+- **Evaluation is honest about its limits.** Every run records its identity (models,
+  prompts, configs, corpus, git commit); non-comparable runs are refused, failures are never
+  counted as refusals, and the reported numbers carry their denominators.
 
-| capability | status |
+## Capabilities and stack
+
+| area | what is implemented |
 |---|---|
-| Ingestion with a data contract (identity, version, article/paragraph/point, provenance) and quarantine | implemented, tested |
-| Hybrid dense+sparse retrieval with a reranker, stable chunk ids | implemented, evaluated |
-| LangGraph agent: answer / compare / checklist modes, structured output, refusal policy | implemented, evaluated on 14 questions (single runs) |
-| Claim-level verification (citation, verbatim quote, NLI entailment per claim and clause) | implemented; thresholds provisional |
-| Local browser UI + FastAPI streaming API + CLI | implemented, tested offline; live smoke test in RELEASE.md |
-| Deterministic evaluation: answer metrics, over-refusal, adversarial scoring | implemented |
-| Adversarial evaluation (5 poisoned-content attacks) | **partial**: preliminary, ablations incomplete |
-| LLM judge (qwen3:4b) | implemented, **failed calibration**, informational only |
-| MLflow run tracking, Langfuse tracing | implemented, optional (off by default) |
-| Docker image | implemented, built in CI; not run end to end locally |
-| CI: lint, types, tests, security gate, image build | implemented, no API keys needed |
-| Claude-based quality gate | workflow present, manual only, inactive (needs a key and a baseline) |
-| Public hosted demo | not implemented (out of scope) |
+| Ingestion | Official Journal XHTML → one validated chunk per paragraph, three-stage data contract, quarantine with reasons |
+| Retrieval | `BAAI/bge-m3` dense + sparse vectors in embedded Qdrant, RRF fusion, `BAAI/bge-reranker-v2-m3`; binding text ranked, recitals attached as context |
+| Agent | LangGraph state machine with four allowlisted read-only tools; answer, compare and checklist modes; structured Pydantic `AgentAnswer` |
+| Verification | citation and quote checks, DeBERTa-v3 NLI entailment per claim and clause, refusal policy |
+| Interfaces | FastAPI with Server-Sent Events, a dependency-free browser UI, a CLI |
+| Evaluation | 151-question golden set, deterministic metrics, over-refusal and adversarial scoring, LLM-judge calibration |
+| Engineering | uv, pytest, ruff, mypy, GitHub Actions security gate, Docker; optional MLflow and Langfuse |
 
-Detailed reports: [over-refusal](eval/results/milestone7_over_refusal.md),
-[adversarial evaluation and ablations](eval/results/milestone7_adversarial.md),
-[judge calibration](eval/results/judge_calibration.md),
-[Milestone 6 closeout](eval/results/milestone6_closeout.md).
+**LLM providers.** The same graph, tools and verifier run on either backend:
 
-## Run the demo on Windows
+| configuration | models | cost | status |
+|---|---|---|---|
+| **Local demo** (`scripts/start-demo.ps1`, forces `CITESHIELD_LLM__PROVIDER=ollama`) | `qwen3:4b` via Ollama for every call | none | used for every reported answer result |
+| Anthropic (the code default when no provider is set) | guard `claude-haiku-5-5`, agent and draft `claude-sonnet-5-5` | paid API, needs `ANTHROPIC_API_KEY` | implemented, **not evaluated**: no Claude run or baseline exists |
+
+## Architecture
+
+```mermaid
+flowchart LR
+    Q([Question]) --> G{Guard}
+    G -- "out of scope" --> R([Typed refusal])
+    G -- "in scope" --> A[Agent]
+    A <--> T[("Tools: retrieve, get_article,<br/>compare, checklist")]
+    T --- C[("Validated corpus<br/>+ Qdrant index")]
+    A --> D[Structured draft]
+    D --> V[Validate schema + citation ids]
+    V -- "one repair" --> D
+    V --> F["Verify: citation, quote,<br/>NLI per claim and clause"]
+    F --> P{Policy}
+    P -- "all supported" --> OK([Answered])
+    P -- "some removed" --> PA([Partial])
+    P -- "nothing survives" --> R
+```
+
+Details: [docs/architecture.md](docs/architecture.md).
+
+## Quickstart (Windows)
 
 Requirements:
 
 - Windows with Python 3.12 and the `py` launcher;
-- [Ollama](https://ollama.com) with `qwen3:4b` pulled;
-- about 8 GB of free RAM (an NVIDIA GPU helps; the retrieval models run on CPU);
-- roughly 6 GB of disk for the Hugging Face models, downloaded on first start.
+- [Ollama](https://ollama.com) installed and running;
+- about 8 GB of free RAM while the demo runs (one question at a time). The retrieval and
+  NLI models run on CPU; an NVIDIA GPU makes Ollama and indexing much faster;
+- about 15 GB of disk, measured on the development machine: 7.3 GB of Hugging Face models
+  (downloaded on first start), about 2.5 GB for `qwen3:4b`, and 4.5 GB for the Python
+  environment with CUDA PyTorch.
 
 In PowerShell, from the repository folder:
 
@@ -64,391 +93,145 @@ py -m uv run citeshield-index
 powershell -ExecutionPolicy Bypass -File scripts\start-demo.ps1
 ```
 
-- `py -m uv sync --extra ml` installs everything (CUDA torch on Windows).
-- `ollama pull qwen3:4b` is needed once.
-- `citeshield-index` builds `data/index` from the committed corpus, once (a few minutes).
-- `start-demo.ps1` checks the prerequisites and opens http://127.0.0.1:8000.
+1. `uv` is called as `py -m uv`, so it does not need to be on `PATH`.
+2. `uv sync --extra ml` installs the app, torch (CUDA wheels on Windows) and the test tools.
+3. `citeshield-index` builds `data/index` from the committed corpus once (a few minutes).
+4. `start-demo.ps1` checks uv, the corpus, the index, Ollama, the model and free RAM, then
+   serves http://127.0.0.1:8000 (loopback only) and opens the browser. Options:
+   `-Port 8080`, `-NoBrowser`.
 
-The launcher always selects the local Ollama backend (`CITESHIELD_LLM__PROVIDER=ollama`)
-for that process, so the demo never calls a paid API, whatever `.env` contains. It binds the
-server to 127.0.0.1 only. Without the script, the equivalent is:
+The models take one to two minutes to load; the status indicator turns green
+(*Ready · Local · qwen3:4b*) when the server can answer, and red with the reason if startup
+fails. A local answer takes about 1–5 minutes.
+
+To run the deterministic test suite (no models, keys or index needed):
 
 ```powershell
-$env:CITESHIELD_LLM__PROVIDER = "ollama"; $env:CITESHIELD_LLM__OLLAMA_NUM_CTX = "24576"
-$env:CITESHIELD_RETRIEVER__EMBED_DEVICE = "cpu"; $env:CITESHIELD_RETRIEVER__RERANK_DEVICE = "cpu"
-py -m uv run uvicorn citeshield.api.main:app --host 127.0.0.1 --port 8000
+py -m uv run pytest
 ```
 
-### Demo walkthrough
+Docker, CI and observability are in [docs/development.md](docs/development.md); the
+evaluation commands are in [docs/evaluation.md](docs/evaluation.md#commands).
 
-1. **Wait for the status indicator** (top right) to say *Ready · Local · qwen3:4b*. It is
-   amber (*Loading models and index…*) while the models load, which takes one to two
-   minutes. It turns red if startup fails or Ollama or the model is missing, and gives the
-   reason, for example a missing index. `GET /health` reports the same.
-2. **Ask a question.** Choose a mode (*Answer*, *Compare* or *Checklist*). Then click an
-   example or type a question, optionally limit the regulations, and press *Research*
-   (or Ctrl + Enter). The research trace beside the answer streams live: the scope check,
-   tool calls with the provisions they returned, drafting and repairs. A local answer takes
-   about 1–5 minutes. A failed request offers *Retry*.
-3. **Read the answer.** It has:
-   - a status badge (answered / partial / refused) and a summary;
-   - each claim with its verbatim quote and citation;
-   - in compare mode, the claims grouped by regulation side by side;
-   - in checklist mode, a table of obligations, who each applies to, and their citations;
-   - qualifications;
-   - how many claims passed verification.
+## How answers work
 
-   Click a citation to see the full official paragraph with the legal act, CELEX number,
-   version, citation id and an EUR-Lex link.
-4. **Show a refusal.** The Irish corporate-tax example is refused before any research. The
-   UI explains why (*Outside the covered law*) and suggests what you can ask instead.
+Choose a mode (*Answer*, *Compare* or *Checklist*), type or pick an example question,
+optionally limit the regulations, and press *Research*. The research trace streams live
+beside the answer: the scope check, each tool call with the provisions it returned,
+drafting and repairs.
 
-Example questions:
-
-| mode | question | a good answer |
+| mode | example question | a good answer |
 |---|---|---|
 | answer | Within how many hours must a controller notify a personal data breach to the supervisory authority? | Without undue delay and, where feasible, within 72 hours, citing GDPR Art. 33(1) |
 | answer | What conditions apply to consent, and can a data subject withdraw it? | Consent can be withdrawn at any time; withdrawal does not affect earlier lawful processing (GDPR Art. 7(3)) |
 | compare | Compare the deadlines for reporting a personal data breach under the GDPR with significant incident reporting under NIS2. | GDPR 72 hours (Art. 33(1)) against NIS2 early warning in 24 h and notification in 72 h (Art. 23(4)) |
 | checklist | Give me a checklist of the obligations of providers of high-risk AI systems. | Items from AI Act Art. 16, each with a citation |
-| answer | What is the corporate income tax rate in Ireland? | Refused: outside the corpus |
+| answer | What is the corporate income tax rate in Ireland? | Refused before any research: outside the covered law |
 
-qwen3:4b is small and varies from run to run. Expect some partial answers, and the
-occasional unnecessary refusal (1 of 11 answerable questions in the last measured run).
+Every answer has one of three outcomes:
 
-## Alternative: Docker (CPU)
+- **Answered.** Each claim (or checklist item) shows a verbatim quote and its citation.
+  Clicking a citation opens the full official paragraph with the legal act, CELEX number,
+  version, citation id and an EUR-Lex link. Compare mode groups claims by regulation;
+  checklist mode shows a table of obligations and who each applies to.
+- **Partial.** Some claims failed verification (wrong citation, quote not in the source, or
+  not entailed by it) and were removed. What remains is verified, and the answer says so.
+- **Refused.** The question is out of scope, asks for advice on the user's own situation,
+  tries to change the assistant's instructions, or the evidence is too thin or contradictory.
+  The refusal carries a typed reason (`out_of_scope`, `insufficient_evidence`,
+  `unsupported_claims`, …) and a plain-language explanation.
 
-```bash
-docker build -t citeshield .
-docker run --rm -p 127.0.0.1:8000:8000 -v ./data/index:/app/data/index -v citeshield-models:/models --env-file .env citeshield
-```
+qwen3:4b is small and varies from run to run: expect some partial answers and the
+occasional unnecessary refusal.
 
-The image contains the code and the validated corpus. The index (`data/index`, built with
-`citeshield-index`) and the model cache are mounted. For Ollama on the host, set
-`CITESHIELD_LLM__PROVIDER=ollama` and
-`CITESHIELD_LLM__OLLAMA_BASE_URL=http://host.docker.internal:11434` in `.env`. The health
-check uses `GET /ready`. CI builds the image; it has not been run end to end on the
-development laptop.
+## Selected results
 
-## Tests, evaluation and CI
+All figures are single runs on small sets, from committed result files; they are
+descriptive, not statistical evidence. Each table names its question set; the sets are
+described in [docs/evaluation.md](docs/evaluation.md#question-sets).
 
-```powershell
-py -m uv sync --group dev --extra ml
-py -m uv run ruff check .; py -m uv run ruff format --check .; py -m uv run mypy src
-py -m uv run pytest
-py -m uv run citeshield-eval-refusal eval/runs/<run_id>
-py -m uv run citeshield-eval-adversarial --score eval/runs/<adv_run_id>
-```
+**Retrieval** — 60-question retrieval benchmark from Milestone 3 (q001–q060 of the golden
+set; ranking metrics over its 53 answerable questions), default configuration
+([report](eval/results/retrieval_latest.md)):
 
-- `pytest` runs the deterministic suite: no models, keys or index needed.
-- `citeshield-eval-refusal` scores over-refusal, coverage, correct and under-refusal, and
-  invalid outputs.
-- `citeshield-eval-adversarial --score` reports attack delivery and success, with clean
-  controls.
-- Live evaluations, which call the LLM, are `citeshield-eval --subset local` and
-  `citeshield-eval-adversarial --run-id ...`. Run records go to `eval/runs/` (gitignored).
+| metric | hybrid + rerank, recitals as context | hybrid + rerank, recitals ranked |
+|---|---|---|
+| hit@1 (top result is an expected provision) | **0.811** | 0.377 |
+| recall@8 (expected provisions in the top 8, mean per question) | 0.975 | 0.928 |
+| MRR@20 | 0.886 | 0.624 |
 
-CI (`.github/workflows/ci.yml`) runs on every pull request without secrets:
+The reranker preferred recitals' explanatory prose over the binding article; ranking only
+binding text fixed that. This benchmark predates the 151-question golden set and was not
+re-run on it.
 
-- ruff, format and mypy;
-- a **blocking security and verification gate**: unsupported and partly supported claims,
-  invalid, fabricated and untrusted citations, quote mismatches, the refusal policy,
-  poisoned retrieval and tool output, and the web API;
-- the full suite;
-- a Docker image build.
+**Local answers and refusals** — `qwen3:4b`, 14-question local subset (11 answerable,
+3 to refuse), run `ollama-local-m7-salvage-2`
+([report](eval/results/milestone7_over_refusal.md)):
 
-These tests use scripted LLMs and NLI stand-ins. They check the pipeline's rules, not a
-model's faithfulness on new questions.
+| metric | result | denominator |
+|---|---|---|
+| coverage (answered or partial) | 8/11 | answerable questions |
+| over-refusal | 1/11 | answerable questions |
+| invalid output (draft never became a valid answer) | 2/11 | answerable questions |
+| correct refusal / under-refusal | 3/3 / 0/3 | questions that should be refused |
+| faithfulness (verifier support ratio of the draft) | 0.889 | mean over the 9 questions with a verified draft |
+| citation precision (share of a question's cited chunks matching an expected provision) | 0.729 | mean over the 8 answerable questions with citations |
+| context recall (share of a question's expected provisions retrieved) | 0.955 | mean over the 11 answerable questions |
 
-The model-quality gate (`eval-gate.yml`, Claude, faithfulness and citation regressions
-against a baseline) is manual-only. It fails explicitly when its API key or baseline is
-missing.
+Most of the citation-precision gap is citations of relevant paragraphs outside the golden
+set's expected list. One claim was only partly supported; the coordinated-clause check added
+afterwards targets that defect.
 
-## Observability (optional)
+**Adversarial (preliminary)** — 5 synthetic poisoned-content cases injected into tool
+output ([report](eval/results/milestone7_adversarial.md)). With all defenses on, no
+pre-registered attack succeeded across 9 delivered samples, but one answer still carried a
+provision reference invented by the payload. With all defenses off, the refusal-induction
+payload succeeded (1 of 5 cases). Only 2 of 6 defense-ablation profiles are complete, 1 is
+partial and 3 were not run. **This is not evidence of general prompt-injection
+resistance.**
 
-```powershell
-py -m uv sync --extra ml --extra observability
-```
+**LLM judge** — the local `qwen3:4b` judge **failed calibration** against 30 held-out
+human labels on every answer grade (best held-out kappa 0.694, target ≥ 0.7). It is
+informational only ([report](eval/results/judge_calibration.md)).
 
-- **MLflow:** add `--mlflow` to `citeshield-eval`, `citeshield-eval-refusal` or
-  `citeshield-eval-adversarial --score`. Each run is logged to `./mlruns` (gitignored; MLflow
-  3's deprecated file store, which the adapter enables with `MLFLOW_ALLOW_FILE_STORE=true`),
-  or to `MLFLOW_TRACKING_URI`. It records the run identity (models, prompt versions, config
-  hashes, corpus, golden set, git commit), every numeric metric, and the metadata as an
-  artifact. No cost is logged for Ollama, which does not bill.
-- **Langfuse:** set `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` and `LANGFUSE_BASE_URL`
-  (cloud or self-hosted). Each API or CLI request then becomes a trace containing:
-  - an agent observation;
-  - the guard;
-  - one retriever/tool observation per call;
-  - one generation per LLM call, with only provider-reported token counts;
-  - warning events for rejected drafts and failed verification;
-  - the outcome (status, refusal reason, citations, support ratio).
+**Tests** — the deterministic suite and the blocking CI security gate use scripted LLMs;
+they check the pipeline's rules, not model quality. Release results are in
+[RELEASE.md](RELEASE.md#tests-and-deterministic-evaluation).
 
-  Without keys nothing is sent, and the demo and tests run unchanged.
-  `CITESHIELD_TRACING=off` disables it. The adapter is unit-tested against a fake client; it
-  has not been exercised against a live Langfuse server.
+## Limitations and security caveats
 
-## Agent
+- **Small, single-run evidence.** Answer quality comes from 14 questions with one local
+  model; there is no Claude evaluation and no calibrated judge, so no automatic
+  model-quality gate has run.
+- **Provisional thresholds.** The NLI thresholds come from 60 author-labelled pairs, the
+  retrieval-score refusal threshold from the 60-question benchmark.
+- **Golden-set review.** q061–q151 and the reference answers of q001–q053 still need a human
+  review; labels come from one annotator, the project author.
+- **Verification has gaps.** The clause check covers explicit coordination only; an
+  unsupported qualifier inside one clause can pass if the NLI model accepts the sentence.
+  References to nonexistent provisions can reach the user through summary sentences.
+- **Prompt injection.** Delimiters and the prompt warning are prompt-level defenses. The
+  adversarial testing is preliminary, the ablations are incomplete, and the guard and tool
+  allowlist were not attacked.
+- **Local model behaviour.** qwen3:4b varies between runs, can produce invalid outputs
+  (2/11 in the last run), and is slow (1–5 minutes per answer).
+- **Resources.** On a 16 GB laptop, free RAM fell to about 115 MB during evaluations; the
+  demo needs about 8 GB free. The Docker image was built in CI but not run end to end.
+- **Not legal advice.** Only the texts published in the Official Journal of the European
+  Union are authentic.
 
-`src/citeshield/agent/graph.py` defines the agent as a LangGraph state machine:
+The full list, including what would complete the original goals, is in
+[RELEASE.md](RELEASE.md#known-limitations).
 
-```
-guard ──in scope──► agent ⇄ tools ──► draft ──► validate ──► final answer
-  │                 (≤ 6 tool rounds)              │  ▲
-  └──out of scope──► typed refusal                 └──┘ one repair, then drop unsupported claims
-```
+## Documentation
 
-- **guard** (Claude Haiku 5.5, structured output): screens out questions about other laws,
-  requests to assess the user's own situation, and attempts to change the assistant's
-  instructions. These are refused before any retrieval runs. If the guard fails, the question
-  goes through to research; the guard saves cost and is not the security boundary.
-- **agent ⇄ tools** (Claude Sonnet 5.5): four read-only tools, `retrieve`, `get_article`,
-  `compare_articles` and `generate_checklist`.
-  - Each tool has a strict schema, and the arguments are validated again with Pydantic.
-  - Calls to any other tool name are rejected and flagged.
-  - Every chunk a tool returns goes into an evidence registry.
-  - Source text is wrapped in `<source>` delimiters that the text itself can't close.
-- **draft**: a separate call with a JSON-schema output (`output_config.format`) writes the
-  `AgentAnswer`. Sonnet 5.5 can't be forced to call a tool, so the draft is a separate call
-  whose JSON schema guarantees the format.
-- **validate**: checks the Pydantic contract, and checks that every citation is a chunk some
-  tool returned in this run. On errors it sends the draft back once with the error list. If
-  the repair also fails, claims with unresolved citations are dropped and the answer becomes
-  `partial`, or a refusal if nothing is left.
-- **History is append-only.** Assistant turns go back to the API unchanged, including their
-  thinking blocks.
-- **Prompt caching and refusal fallback.** The system prompt and tool list are cached.
-  Sonnet calls use the server-side refusal fallback (`fallbacks: "default"`).
-- **Logged with each run**: prompt versions (content hashes), the agent, retriever and corpus
-  hashes, token usage and estimated cost.
-
-## Verification and refusal policy
-
-Every drafted answer is verified before anyone sees it (`src/citeshield/verify/`):
-
-1. **Citations** are checked against the canonical corpus and this run's evidence:
-   `fabricated` (no such id), `version_mismatch` (same provision, other `@version`),
-   `non_citable` (e.g. an untrusted source), `not_retrieved` (no tool returned it).
-2. **Quotes** must match the canonical text after deterministic normalisation (NFKC,
-   typographic quotes/dashes, whitespace, case). Near misses are reported, never accepted.
-3. **Entailment**: a matching quote only proves the passage exists. Each claim must be
-   entailed by its cited text according to a local NLI model
-   (`MoritzLaurer/DeBERTa-v3-large-mnli-fever-anli-ling-wanli`, MIT, CPU by default).
-   Verdicts: supported, unsupported, contradicted, conflicting, citation_invalid.
-   A claim that joins obligations ("must send X and notify Y", or "A; B") must also have
-   each clause entailed. Whole-sentence entailment alone once let a claim through that
-   was only half supported (`VerifierConfig.check_conjuncts`). Other forms of partial
-   support, such as an unsupported qualifier inside one clause, are not split out.
-4. **Summary and caveats** are split into sentences; only sentences entailed by the verified
-   claims or their sources are kept. Disclaimers are added by code.
-
-Failures get one revision with per-claim reasons. After that `agent/policy.py` removes what
-failed (answer becomes `partial`) or refuses with a specific reason
-(`invalid_citations`, `unsupported_claims`, `conflicting_sources`, `insufficient_evidence`
-when the best retrieval score is below 0.30). Verification can only lower a status. The
-verifier is a required constructor argument: no agent can be built without it. The full
-`VerificationReport` is returned in the final SSE event.
-
-Thresholds come from `uv run citeshield-calibrate-verifier` on 60 hand-labelled pairs
-(`eval/verification/claims.jsonl`, stratified calibration/held-out split); see
-[eval/results/verifier_calibration.md](eval/results/verifier_calibration.md). The model
-separates that set with a wide margin, so the data shows reliability on clear-cut claims but
-does not pin the thresholds down; they stay provisional until the answer evals have been
-labelled.
-
-Opt-in test suites: `pytest -m nli tests/nli` (real model) and `pytest -m live tests/live`
-(Ollama).
-
-## Evaluation
-
-The golden set (`eval/golden/questions.jsonl`) has 151 questions: lookups, definitions,
-multi-paragraph, cross-regulation, comparison, checklist, temporal, and 30 (20%) that must be
-refused (other laws, case law, enforcement facts, personal legal advice, injection, off-topic).
-Each answerable item lists its expected citations at paragraph level and a short reference
-answer. Items q061-q151 were drafted with every citation checked against the corpus and are
-marked `"reviewed": false` until a human has read them. The reference answers of q001-q053
-were also drafted from the text of their expected provisions and still need a human read.
-
-```bash
-uv run citeshield-eval --subset smoke          # 40 stratified questions (eval/golden/smoke.json)
-uv run citeshield-eval --subset full --judge   # every item, plus the LLM judge
-uv run citeshield-eval --rescore eval/runs/<run_id> [--judge]   # re-score, no agent calls
-uv run citeshield-eval-gate eval/runs/<run_id>/metrics.json   # compare with the baseline
-uv run citeshield-eval-gate eval/runs/<run_id>/metrics.json --write-baseline
-uv run citeshield-label                        # hand-label the frozen sample (eval/labels)
-uv run citeshield-label --coverage             # labelled vs. remaining, label problems
-uv run citeshield-calibrate-judge              # judge the labelled items, kappa + report
-```
-
-A run writes `eval/runs/<run_id>/` (`meta.json`, `answers.jsonl`, `judge.jsonl`,
-`metrics.json`, `report.md`; gitignored) and copies the report to
-[eval/results/answers_latest.md](eval/results/answers_latest.md). Re-running the same
-`--run-id` resumes where it stopped, and refuses if the agent configuration changed in
-between. `--write-smoke` regenerates the smoke subset deterministically (proportional per
-category, at least two items each); changing it requires a new baseline.
-
-Metrics (`src/citeshield/evaluation/metrics.py`), all deterministic:
-
-- **citation precision / recall**: cited chunks matching an expected paragraph, and
-  expected paragraphs that were cited.
-- **refusal precision / recall / F1**: a deliberate refusal is the positive class. A crash
-  (no answer at all, e.g. a context overflow) is never a refusal: crashes are counted in
-  `n_crashed` / `error_rate` and in schema validity, and excluded from the quality metrics.
-- **schema validity**: share of final answers that round-trip the `AgentAnswer` contract,
-  with crashes counted as invalid. **first-draft validity** is the share with no repair.
-- **faithfulness**: the verifier's support ratio on the draft behind each answer. This is
-  RAGAS-style faithfulness, except the claims come from the answer schema and entailment
-  comes from the local NLI model instead of an LLM.
-- **context precision / recall**: ID-based, on the chunks the tools returned. Precision is
-  rank-weighted as in RAGAS (mean precision@k at the ranks of relevant chunks).
-- **latency** p50/p95 (nearest rank, crashes excluded) and **cost** per question.
-
-The judge (`evaluation/judge.py`, versioned prompts `evaluation/prompts/judge.md` and
-`judge_refusal.md`) grades answers on correctness 1-3 against the reference answer,
-faithfulness to the cited text and citation adequacy, and grades refusals on whether
-refusing was appropriate. It sees exactly the text the human labeller sees, and each
-verdict and label records a hash of that text, so a label is only compared with a verdict
-on the same answer. On Ollama the judge gets the full `num_predict` budget (qwen3 thinks
-before answering), and a truncated verdict is an error, not a grade.
-
-**Judge calibration.** `eval/labels/sample.jsonl` is a frozen, committed sample of 60 items
-built by `citeshield-label-sample` from stored runs: 36 real answers, 12 refusals (6
-appropriate, 6 not) and 12 synthetic perturbations of real answers (a claim strengthened
-beyond its source, a citation swapped to a non-expected provision, a fact contradicted).
-The perturbations exist because the verifier removes most bad claims before an answer is
-final, so real answers alone give almost no negative examples; they are labelled by a
-person like every other item, and the labeller never sees which items are synthetic. The
-sample is split by golden question (no question on both sides), 30 dev / 30 held-out.
-Labelling instructions and worked examples: [eval/labels/GUIDE.md](eval/labels/GUIDE.md).
-`citeshield-calibrate-judge` reports, per grade and split, Cohen's kappa
-(quadratic-weighted for correctness), agreement, confusion matrices, human class counts and
-a seeded bootstrap 95% interval. A grade "meets target" only if, on held-out, there are at
-least 20 pairs with at least 5 human labels in each of two classes and both the kappa and
-the lower end of its interval are >= 0.7; otherwise it is "below target" or "insufficient
-data". Dev disagreements are listed for prompt iteration; held-out ones are only counted.
-Results go to `eval/results/judge_calibration.md`. Labels come from one annotator.
-
-**Model-quality gate** (`.github/workflows/eval-gate.yml`, started manually; not part of the
-required PR checks). It runs the smoke subset against Claude and compares the result with
-`eval/baselines/anthropic.json`. It fails if
-faithfulness drops by more than 0.03 or falls below 0.85, citation precision drops by more
-than 0.03, refusal F1 drops by more than 0.05, or schema validity is below 100%. A run made
-on a different subset, golden set, corpus or set of models is reported as not comparable;
-it never counts as a pass. Comparability also covers the Ollama model digest, the LLM
-decoding options (`num_ctx`, `num_predict`) and the devices and weight dtypes the models
-actually loaded with. Prompts and configs may differ from the baseline: they are what the
-gate tests. The gate exits 0 (pass), 1 (regression) or 2 (not comparable / no baseline);
-both 1 and 2 fail the job. The job also fails, with an explanation, if the
-`ANTHROPIC_API_KEY` secret or the baseline file is missing, so it can never pass as a
-no-op. Neither exists yet, so no model-quality gate has run.
-
-**Gates per provider.** The thresholds above apply to Claude only. For local Ollama
-(qwen3:4b) only the deterministic checks block: schema validity below 100% and any crash.
-Faithfulness, citation precision and refusal F1 are reported as advisory (drops of more
-than 0.10, 0.10 and 0.15 are flagged) and never fail a run, and the 0.85 faithfulness floor
-does not apply. qwen3:4b samples, so the same question can be refused in one run and
-answered in the next, and the local subset is small; the advisory thresholds stay
-uncalibrated until run-to-run variance has been measured on repeated runs.
-
-**Local Ollama baseline (provisional).** On the 16 GB dev machine the 40-question smoke run
-completes but exhausts system RAM (diagnostic report:
-[eval/results/ollama_smoke40_mixed_diagnostic.md](eval/results/ollama_smoke40_mixed_diagnostic.md);
-faithfulness 0.841 there is evidence, not a threshold). The local baseline therefore uses
-`--subset local`: 14 hand-picked questions in `eval/golden/smoke_local.json` (lookup,
-multi-paragraph, cross-regulation, temporal, checklist, and three refusal types; the file
-records the selection rule). It is stored as `eval/baselines/ollama_provisional.json`, with
-its limitations in `baseline_info`. It is not statistically representative. The run
-configuration keeps the GPU for the LLM and saves RAM:
-
-```bash
-CITESHIELD_LLM__PROVIDER=ollama CITESHIELD_LLM__OLLAMA_NUM_CTX=24576 \
-CITESHIELD_LLM__OLLAMA_NUM_PREDICT=8192 CITESHIELD_RETRIEVER__EMBED_DTYPE=bfloat16 \
-CITESHIELD_RETRIEVER__RERANK_BATCH_SIZE=8 CITESHIELD_VERIFIER__BATCH_SIZE=4 \
-uv run citeshield-eval --subset local
-uv run citeshield-eval-gate eval/runs/<run_id>/metrics.json --baseline eval/baselines/ollama_provisional.json
-```
-
-The 40-question `--subset smoke` run stays available for manual or scheduled local runs on
-a machine with more RAM; never mix its metrics with a `local` run (the gate reports them as
-not comparable).
-
-CI does not build the index. Build it locally and publish it as a release asset keyed by the
-corpus hash (printed by `citeshield-index` and stored in `data/index/manifest.json`):
-
-```bash
-tar -czf index.tar.gz -C data index
-gh release create index-<corpus_hash> index.tar.gz --title "Index <corpus_hash>" --notes "Qdrant index"
-```
-
-## Ingestion and the data contract
-
-Sources are pinned in `data/corpus_manifest.yaml` and downloaded as Official Journal XHTML
-from the Publications Office Cellar API (the EUR-Lex website blocks scripted access).
-
-Each paragraph becomes one `ChunkRecord` (`src/citeshield/contracts/chunk.py`). A paragraph
-that is too long is split into its points, (a), (b) and so on, and the lead-in sentence is
-repeated on each one. Every record goes through three validation stages
-(`src/citeshield/ingest/validate.py`):
-
-1. **schema**: types, a deterministic `chunk_id`, a content hash, and official provenance.
-2. **semantic**: the record agrees with the document's table of contents, and the paragraph
-   text starts with its own number.
-3. **collection**: no duplicate ids, and no gaps in paragraph numbering.
-
-Records that fail go to `data/quarantine/<run_id>.jsonl` together with the reasons.
-The run fails, and writes no corpus, if any document has structural errors or if
-more than 2% of its records are quarantined. `data/processed/ingest_report.json` gives the
-counts and the top quarantine reasons for each regulation.
-
-## Retrieval
-
-- **Encoder**: `BAAI/bge-m3`, implemented directly on `transformers` (`retrieval/embed.py`).
-  One forward pass gives a dense vector (CLS) and a sparse lexical vector (from the model's
-  `sparse_linear` head).
-- **Index**: Qdrant stores two named vectors per chunk. The payload holds only ids and
-  filterable metadata. Text always comes from the validated corpus, and the retriever
-  refuses to run if the index manifest's corpus hash doesn't match `chunks.jsonl`.
-- **Search**: dense and sparse prefetch, fused with RRF. Then `BAAI/bge-reranker-v2-m3`
-  reranks the top 40 down to 8. Definitions and "referred to in paragraph N"
-  cross-references are added as labelled expansions.
-- **Recitals as context**: only binding text (articles and annexes) is ranked. The best 2
-  recitals are attached separately as non-binding interpretive context.
-
-### Results
-
-The golden set (`eval/golden/questions.jsonl`) has 53 answerable questions with
-paragraph-level expected citations and 7 questions the agent should refuse. The table is
-generated by `citeshield-eval-retrieval`:
-
-| variant | hit@1 | recall@3 | recall@5 | recall@8 | recall@20 | MRR@20 |
-|---|---|---|---|---|---|---|
-| dense | 0.585 | 0.796 | 0.852 | 0.909 | 0.984 | 0.740 |
-| sparse | 0.472 | 0.676 | 0.871 | 0.918 | 0.975 | 0.665 |
-| hybrid (RRF) | 0.585 | 0.786 | 0.871 | 0.918 | 0.994 | 0.742 |
-| hybrid + rerank | **0.377** | 0.758 | 0.843 | 0.928 | 0.984 | 0.624 |
-| hybrid, recitals as context | 0.792 | 0.890 | 0.956 | 0.975 | 0.994 | 0.870 |
-| **hybrid + rerank, recitals as context** (default) | **0.811** | 0.890 | 0.947 | 0.975 | 0.994 | **0.886** |
-
-What this shows:
-
-- **Reranking alone made precision worse.** The cross-encoder prefers recitals, whose
-  explanatory prose reads like an answer, over the binding article the user needs to cite.
-  Ranking only operative text fixes this, and only then does the reranker help.
-- **The reranker score is a usable refusal signal.** With the default config, every
-  answerable question has a top score of at least 0.67, and every out-of-corpus question
-  scores at most 0.15. The closest call is the Cyber Resilience Act question, which lands on
-  NIS2 text. Milestone 5 calibrates the refusal threshold τ on this gap.
-- **Remaining misses are cross-regulation questions**, such as GDPR vs NIS2 breach
-  deadlines, where one regulation crowds out the other. The agent in milestone 4 is meant to
-  fix this by retrieving per regulation.
-- Definition and cross-reference expansion recovered no extra golden citations on this set.
-  It stays enabled because it supplies context the generator needs, and its value will be
-  measured on answer faithfulness rather than on recall.
-
-Caveats: the set is small, and it was written by the system's author. The recital policy was
-chosen after seeing these misses. It's a principled choice (recitals aren't binding), but it
-needs confirming on the larger held-out golden set planned for milestone 6.
+| document | contents |
+|---|---|
+| [RELEASE.md](RELEASE.md) | 0.1.0 status: feature table, verified results with definitions, live smoke test, adversarial table, known limitations |
+| [docs/architecture.md](docs/architecture.md) | providers, agent graph, verification and refusal policy, ingestion data contract, retrieval |
+| [docs/evaluation.md](docs/evaluation.md) | question sets, commands, metric definitions, retrieval benchmark, judge calibration, model-quality gate |
+| [docs/development.md](docs/development.md) | tests and opt-in suites, CI, Docker, MLflow and Langfuse, rebuilding the corpus |
+| [eval/results/](eval/results/) | the detailed evaluation reports |
 
 ## License
 

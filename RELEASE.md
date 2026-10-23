@@ -8,7 +8,8 @@ is shown, and the agent refuses when the evidence does not support an answer.
 It is a **local demonstration**: it runs on a Windows laptop with a local model (Ollama
 `qwen3:4b`). **No public demo is hosted.** This document is the final status; research is
 frozen. The numbers below are the evidence that exists, with their limits. Detailed
-reports are in `eval/results/`.
+reports are in `eval/results/`; architecture, evaluation method and development notes are in
+[`docs/`](docs/).
 
 > Experimental legal information, not legal advice or a compliance certification. The
 > adversarial testing below is preliminary: it does **not** show that CiteShield resists
@@ -72,7 +73,8 @@ Requirements:
 - Python 3.12 with the `py` launcher;
 - Ollama with `qwen3:4b`;
 - about 8 GB of free RAM;
-- about 6 GB of disk for the Hugging Face models, downloaded on first use.
+- about 7.3 GB of disk for the Hugging Face models (measured cache), downloaded on first use,
+  plus about 2.5 GB for `qwen3:4b` and 4.5 GB for the Python environment.
 
 ```powershell
 py -m pip install uv
@@ -139,8 +141,9 @@ Every figure comes from a stored run or committed result file. These are single 
 small n: descriptive, not statistical evidence. Stored run records (`eval/runs/`) are local
 and gitignored; the reports quote their SHA-256 prefixes.
 
-**Retrieval** (`eval/results/retrieval_latest.md`). Over the 53 answerable golden questions,
-default configuration (hybrid + rerank, recitals as context):
+**Retrieval** (`eval/results/retrieval_latest.md`). The 60-question retrieval benchmark from
+Milestone 3 (q001–q060 of the golden set, before it grew to 151; not re-run since), over its
+53 answerable questions, default configuration (hybrid + rerank, recitals as context):
 
 | metric | value | definition |
 |---|---|---|
@@ -166,9 +169,13 @@ held-out half without error, but the feasible intervals are wide.
 - **Coverage:** answered or partial, out of answerable questions.
 - **Invalid output:** a draft that never became a valid answer.
 - **Correct refusal and under-refusal:** out of the questions that should be refused.
-- **Faithfulness:** the mean verifier support ratio of the draft behind each answer.
-- **Citation precision:** the share of cited chunks matching an expected provision.
-- **Context recall:** the share of expected provisions retrieved.
+- **Faithfulness:** the verifier support ratio of the draft behind each answer, averaged over
+  the questions with a verified draft (9 in `ollama-local-m7-salvage-2`).
+- **Citation precision:** per question, the share of cited chunks matching an expected
+  provision, averaged over the answerable questions with at least one citation (8 in
+  `ollama-local-m7-salvage-2`).
+- **Context recall:** per question, the share of expected provisions retrieved, averaged over
+  the 11 answerable questions.
 
 **Caveats on these two runs.**
 
