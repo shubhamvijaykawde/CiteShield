@@ -449,3 +449,21 @@ What this shows:
 Caveats: the set is small, and it was written by the system's author. The recital policy was
 chosen after seeing these misses. It's a principled choice (recitals aren't binding), but it
 needs confirming on the larger held-out golden set planned for milestone 6.
+
+## License
+
+CiteShield's original project code is released under the [MIT License](LICENSE),
+Copyright (c) 2026 Shubham Vijay Kawde.
+
+The MIT License covers only that original code. Everything else stays under its own
+license and terms, and the MIT License does not override them:
+
+- **EU legal texts.** The regulations and the excerpts derived from them, such as
+  `data/processed/chunks.jsonl`, come from EUR-Lex and the Publications Office of the
+  European Union. Their reuse is governed by the EU's terms for reusing its documents.
+  Only the texts published in the Official Journal of the European Union are authentic.
+- **Dependencies.** Python packages are used under their own licenses.
+- **Models.** Model weights are downloaded separately and are not part of this repository:
+  Ollama `qwen3:4b`, the `BAAI` encoder and reranker, and the NLI model. Each is subject to
+  its publisher's license and terms.
+- **Third-party services and assets** remain subject to their providers' terms.
