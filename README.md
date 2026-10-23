@@ -14,7 +14,7 @@ texts (GDPR, AI Act, DSA, NIS2, Data Act) and refuses when the evidence is thin.
 | 3. Hybrid retrieval + reranker | done |
 | 4. LangGraph agent + FastAPI streaming (Claude or local Ollama) | done; live-tested on Ollama qwen3:4b |
 | 5. Claim-level verifier + refusal policy | done (thresholds provisional, see below) |
-| 6. Answer evals, LLM judge + calibration, CI gate | in progress (tooling done; provisional local Ollama baseline; labels and Claude baseline pending) |
+| 6. Answer evals, LLM judge + calibration, CI gate | closed with gaps: harness, 60 labels and provisional Ollama baseline done; qwen3:4b judge failed calibration; Claude baseline pending ([closeout](eval/results/milestone6_closeout.md)) |
 | 7–9. Red-team, observability, delivery | planned |
 
 ## Quickstart
@@ -115,8 +115,9 @@ uv run citeshield-eval --subset full --judge   # every item, plus the LLM judge
 uv run citeshield-eval --rescore eval/runs/<run_id> [--judge]   # re-score, no agent calls
 uv run citeshield-eval-gate eval/runs/<run_id>/metrics.json   # compare with the baseline
 uv run citeshield-eval-gate eval/runs/<run_id>/metrics.json --write-baseline
-uv run citeshield-label eval/runs/<run_id>     # hand-label answers for judge calibration
-uv run citeshield-calibrate-judge              # Cohen's kappa, judge vs. human labels
+uv run citeshield-label                        # hand-label the frozen sample (eval/labels)
+uv run citeshield-label --coverage             # labelled vs. remaining, label problems
+uv run citeshield-calibrate-judge              # judge the labelled items, kappa + report
 ```
 
 A run writes `eval/runs/<run_id>/` (`meta.json`, `answers.jsonl`, `judge.jsonl`,
@@ -142,13 +143,30 @@ Metrics (`src/citeshield/evaluation/metrics.py`), all deterministic:
   rank-weighted as in RAGAS (mean precision@k at the ranks of relevant chunks).
 - **latency** p50/p95 (nearest rank, crashes excluded) and **cost** per question.
 
-The judge (`evaluation/judge.py`, versioned prompt `evaluation/prompts/judge.md`) grades
-correctness 1-3 against the reference answer, faithfulness to the cited text, and citation
-adequacy. It sees exactly the text the human labeller sees, and each verdict and label
-records a hash of that text, so a label is only compared with a verdict on the same answer.
-Calibration splits the labels into dev and held-out halves by a stable hash, and the kappa
-reported is the held-out one (target >= 0.7; quadratic-weighted for correctness). Results go
-to `eval/results/judge_calibration.md`.
+The judge (`evaluation/judge.py`, versioned prompts `evaluation/prompts/judge.md` and
+`judge_refusal.md`) grades answers on correctness 1-3 against the reference answer,
+faithfulness to the cited text and citation adequacy, and grades refusals on whether
+refusing was appropriate. It sees exactly the text the human labeller sees, and each
+verdict and label records a hash of that text, so a label is only compared with a verdict
+on the same answer. On Ollama the judge gets the full `num_predict` budget (qwen3 thinks
+before answering), and a truncated verdict is an error, not a grade.
+
+**Judge calibration.** `eval/labels/sample.jsonl` is a frozen, committed sample of 60 items
+built by `citeshield-label-sample` from stored runs: 36 real answers, 12 refusals (6
+appropriate, 6 not) and 12 synthetic perturbations of real answers (a claim strengthened
+beyond its source, a citation swapped to a non-expected provision, a fact contradicted).
+The perturbations exist because the verifier removes most bad claims before an answer is
+final, so real answers alone give almost no negative examples; they are labelled by a
+person like every other item, and the labeller never sees which items are synthetic. The
+sample is split by golden question (no question on both sides), 30 dev / 30 held-out.
+Labelling instructions and worked examples: [eval/labels/GUIDE.md](eval/labels/GUIDE.md).
+`citeshield-calibrate-judge` reports, per grade and split, Cohen's kappa
+(quadratic-weighted for correctness), agreement, confusion matrices, human class counts and
+a seeded bootstrap 95% interval. A grade "meets target" only if, on held-out, there are at
+least 20 pairs with at least 5 human labels in each of two classes and both the kappa and
+the lower end of its interval are >= 0.7; otherwise it is "below target" or "insufficient
+data". Dev disagreements are listed for prompt iteration; held-out ones are only counted.
+Results go to `eval/results/judge_calibration.md`. Labels come from one annotator.
 
 **CI gate** (`.github/workflows/eval-gate.yml`): on PRs it runs the smoke subset against
 Claude and compares the result with `eval/baselines/anthropic.json`. It fails if

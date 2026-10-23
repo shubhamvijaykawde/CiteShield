@@ -391,8 +391,10 @@ def build_judge(settings: Settings, model: str | None) -> Judge:
     from citeshield.agent.factory import build_llm
 
     llm, cfg = build_llm(settings)
-    # Haiku on Anthropic, the guard model on Ollama, unless overridden.
-    return Judge(llm, model or cfg.guard_model)
+    # Haiku on Anthropic, the guard model on Ollama, unless overridden. On Ollama the budget
+    # includes qwen3's thinking, so the judge gets the provider's full num_predict.
+    max_tokens = settings.llm.ollama_num_predict if settings.llm.provider == "ollama" else 4000
+    return Judge(llm, model or cfg.guard_model, max_tokens=max_tokens)
 
 
 def main(argv: list[str] | None = None) -> int:

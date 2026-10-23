@@ -1,0 +1,19 @@
+{
+  "status": "frozen",
+  "frozen_on": "2026-10-23",
+  "reason": "Chosen after one round of dev-set prompt iteration on the 24 dev answers (4a71b1d4 -> ac2a420f). No prompt changes until the held-out evaluation is done; the held-out result is the first independent measurement of this judge.",
+  "provider": "ollama",
+  "model": "qwen3:4b",
+  "prompts": {
+    "answer": {
+      "file": "src/citeshield/evaluation/prompts/judge.md",
+      "version": "ac2a420f",
+      "sha256": "ac2a420f0af2d6b391288fec4b6b9d2dc9b2643d4bb9cd654011a8852dfc5537"
+    },
+    "refusal": {
+      "file": "src/citeshield/evaluation/prompts/judge_refusal.md",
+      "version": "46212112",
+      "sha256": "462121126654c901e39459ab5c39d8119abecc3623a4507456b88e0cac46e7b8"
+    }
+  }
+}

@@ -4,6 +4,11 @@ The judge sees ``AnswerRecord.view()``, the same text the human labeller sees in
 ``citeshield-label``, so judge and human grades are comparable item by item. Every verdict
 records the prompt version and the ``view_sha`` of the text it graded; calibration only
 compares a verdict and a label that graded the same text.
+
+Refusals get their own rubric (``prompts/judge_refusal.md``, versioned separately) and a
+single grade, ``refusal_appropriate``. On Ollama the output budget must cover qwen3's
+thinking (3k-4.5k tokens before it writes anything), so ``build_judge`` passes the
+provider's ``num_predict``; a verdict cut off by the budget is an error, never a grade.
 """
 
 from __future__ import annotations
@@ -17,11 +22,12 @@ from citeshield.agent.llm import LLM
 from citeshield.agent.prompts import Prompt
 from citeshield.evaluation.records import AnswerRecord
 
-PROMPT_PATH = Path(__file__).parent / "prompts" / "judge.md"
+PROMPTS_DIR = Path(__file__).parent / "prompts"
+PROMPT_PATH = PROMPTS_DIR / "judge.md"
 
 
-def judge_prompt() -> Prompt:
-    return Prompt("judge", PROMPT_PATH.read_text(encoding="utf-8"))
+def judge_prompt(name: str = "judge") -> Prompt:
+    return Prompt(name, (PROMPTS_DIR / f"{name}.md").read_text(encoding="utf-8"))
 
 
 class Grades(BaseModel):
@@ -40,6 +46,30 @@ class JudgeVerdict(Grades):
     rationale: str = ""
     model: str
     prompt_version: str
+
+
+class RefusalVerdict(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    view_sha: str
+    refusal_appropriate: bool
+    rationale: str = ""
+    model: str
+    prompt_version: str
+
+
+def refusal_schema() -> dict[str, Any]:
+    props: dict[str, Any] = {
+        "rationale": {"type": "string"},
+        "refusal_appropriate": {"type": "boolean"},
+    }
+    return {
+        "type": "object",
+        "properties": props,
+        "required": list(props),
+        "additionalProperties": False,
+    }
 
 
 def judge_schema() -> dict[str, Any]:
@@ -66,23 +96,46 @@ class Judge:
         self.effort = effort
         self.max_tokens = max_tokens
         self.prompt = judge_prompt()
+        self.refusal_prompt = judge_prompt("judge_refusal")
 
     @property
     def meta(self) -> dict[str, str]:
-        return {"model": self.model, "prompt_version": self.prompt.version}
+        return {
+            "model": self.model,
+            "prompt_version": self.prompt.version,
+            "refusal_prompt_version": self.refusal_prompt.version,
+        }
 
-    def grade(self, rec: AnswerRecord) -> JudgeVerdict:
+    def _ask(self, system: str, rec: AnswerRecord, schema: dict[str, Any]) -> dict[str, Any]:
         resp = self.llm.chat(
             model=self.model,
-            system=self.prompt.text,
+            system=system,
             messages=[{"role": "user", "content": rec.view()}],
-            json_schema=judge_schema(),
+            json_schema=schema,
             effort=self.effort,
             max_tokens=self.max_tokens,
         )
+        if resp.stop_reason == "max_tokens":
+            raise ValueError(f"judge output hit the {self.max_tokens}-token budget")
         data = resp.json()
         if not isinstance(data, dict):
             raise ValueError("judge output is not a JSON object")
+        return data
+
+    def grade_refusal(self, rec: AnswerRecord) -> RefusalVerdict:
+        data = self._ask(self.refusal_prompt.text, rec, refusal_schema())
+        return RefusalVerdict.model_validate(
+            {
+                **data,
+                "id": rec.id,
+                "view_sha": rec.view_sha,
+                "model": self.model,
+                "prompt_version": self.refusal_prompt.version,
+            }
+        )
+
+    def grade(self, rec: AnswerRecord) -> JudgeVerdict:
+        data = self._ask(self.prompt.text, rec, judge_schema())
         return JudgeVerdict.model_validate(
             {
                 **data,

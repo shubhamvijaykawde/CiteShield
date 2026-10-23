@@ -1,9 +1,8 @@
-"""Answer evals: records, metrics, smoke selection, judge, calibration, labelling, CI gate."""
+"""Answer evals: records, metrics, smoke selection, judge, CI gate. Labelling: test_labelling."""
 
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -14,18 +13,7 @@ from citeshield.contracts.answer import AgentAnswer
 from citeshield.evaluation import gate, metrics
 from citeshield.evaluation.golden import Category, GoldenItem, load_golden
 from citeshield.evaluation.judge import Judge, JudgeVerdict, judge_prompt
-from citeshield.evaluation.judge_calibration import (
-    HumanLabel,
-    Pair,
-    agreement,
-    calibrate,
-    cohen_kappa,
-    load_labels,
-    pair_labels,
-    split_of,
-)
-from citeshield.evaluation.labeling import label_run
-from citeshield.evaluation.records import AnswerRecord, CitedSource, load_records
+from citeshield.evaluation.records import AnswerRecord, CitedSource
 from citeshield.evaluation.run_eval import golden_sha, select, stratified_smoke
 from helpers import json_turn, make_chunk
 
@@ -232,106 +220,6 @@ def test_judge_grades_the_view() -> None:
     call = llm.calls[0]
     assert call["messages"][0]["content"] == rec.view()
     assert call["json_schema"]["properties"]["correctness"]["enum"] == [1, 2, 3]
-
-
-# ------------------------------------------------------------------------ calibration
-
-
-def test_cohen_kappa_known_values() -> None:
-    a = [True, True, False, False]
-    assert cohen_kappa(a, a, [False, True]) == 1.0
-    assert cohen_kappa(a, [True, False, True, False], [False, True]) == pytest.approx(0.0)
-    # Textbook example: 20 yes/yes, 5 yes/no, 10 no/yes, 15 no/no -> 0.4.
-    h = [True] * 25 + [False] * 25
-    j = [True] * 20 + [False] * 5 + [True] * 10 + [False] * 15
-    assert cohen_kappa(h, j, [False, True]) == pytest.approx(0.4)
-    # Quadratic weights penalise 1-vs-3 more than 2-vs-3.
-    near = cohen_kappa([1, 2, 3, 3], [1, 2, 2, 3], [1, 2, 3], quadratic=True)
-    far = cohen_kappa([1, 2, 3, 3], [1, 2, 1, 3], [1, 2, 3], quadratic=True)
-    assert near is not None and far is not None and near > far
-    assert cohen_kappa([], [], [1, 2, 3]) is None
-
-
-def _label(rid: str, sha: str, run_id: str = "r1", c: int = 3) -> HumanLabel:
-    return HumanLabel(
-        id=rid, run_id=run_id, view_sha=sha, correctness=c, faithful=True, citation_adequate=True
-    )
-
-
-def test_split_is_stable_and_roughly_even() -> None:
-    labels = [_label(f"q{i:03d}", "x") for i in range(200)]
-    splits = [split_of(lb) for lb in labels]
-    assert splits == [split_of(lb) for lb in labels]
-    assert 70 < splits.count("dev") < 130
-
-
-@pytest.fixture
-def run_dir(tmp_path: Path) -> Iterator[Path]:
-    d = tmp_path / "runs" / "r1"
-    d.mkdir(parents=True)
-    recs = [
-        record("q001", answer=answered(C61.chunk_id)),
-        record("q002", answer=answered(C7.chunk_id)),
-        record("q003", answer=REFUSED),
-    ]
-    (d / "answers.jsonl").write_text("".join(r.model_dump_json() + "\n" for r in recs), "utf-8")
-    yield d
-
-
-def test_pair_labels_judges_once_and_caches(run_dir: Path) -> None:
-    recs = {r.id: r for r in load_records(run_dir / "answers.jsonl")}
-    labels = [_label("q001", recs["q001"].view_sha), _label("q002", "stale-sha")]
-    llm = FakeJudgeLLM({"correctness": 2, "faithful": True, "citation_adequate": True})
-    judge = Judge(llm, "judge-model")
-    pairs, skipped = pair_labels(labels, judge, judge.prompt.version, run_dir.parent)
-    assert len(pairs) == 1 and len(llm.calls) == 1
-    assert skipped == ["r1/q002: answer missing or changed since labelling"]
-    # Second pass reuses judge.jsonl.
-    again, _ = pair_labels(labels, judge, judge.prompt.version, run_dir.parent)
-    assert len(again) == 1 and len(llm.calls) == 1
-    # Without a judge and under a different prompt version nothing is cached.
-    none, skipped = pair_labels(labels[:1], None, "other", run_dir.parent)
-    assert not none and "no cached verdict" in skipped[0]
-
-
-def test_calibrate_reports_holdout() -> None:
-    v = {"model": "m", "prompt_version": "p", "view_sha": "x"}
-    pairs = []
-    for i in range(40):
-        lb = _label(f"q{i:03d}", "x", c=1 + i % 3)
-        judged = JudgeVerdict(
-            id=lb.id, correctness=lb.correctness, faithful=True, citation_adequate=True, **v
-        )
-        pairs.append(Pair(lb, judged, split_of(lb)))
-    result = calibrate(pairs)
-    assert result["holdout"]["correctness"]["kappa"] == 1.0
-    assert result["meets_target"]
-    assert result["holdout"]["n"] + result["dev"]["n"] == 40
-    assert agreement([])["correctness"]["kappa"] is None
-
-
-# ------------------------------------------------------------------------ labelling
-
-
-def test_label_run_appends_and_skips_done(run_dir: Path, tmp_path: Path) -> None:
-    labels_path = tmp_path / "labels.jsonl"
-    answers = iter(["3", "y", "n", "good", "x", "2", "n", "y", ""])
-    assert label_run(run_dir, labels_path, ask=lambda _p: next(answers)) == 2
-    saved = load_labels(labels_path)
-    assert [(lb.id, lb.correctness, lb.faithful, lb.citation_adequate) for lb in saved] == [
-        ("q001", 3, True, False),
-        ("q002", 2, False, True),
-    ]
-    assert saved[0].note == "good"
-    # Refusals are not labelled, and labelled answers are not asked again.
-    assert label_run(run_dir, labels_path, ask=lambda _p: "q") == 0
-
-
-def test_label_run_skip_and_quit(run_dir: Path, tmp_path: Path) -> None:
-    labels_path = tmp_path / "labels.jsonl"
-    answers = iter(["s", "q"])
-    assert label_run(run_dir, labels_path, ask=lambda _p: next(answers)) == 0
-    assert not labels_path.exists() or not load_labels(labels_path)
 
 
 # ------------------------------------------------------------------------ gate
