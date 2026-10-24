@@ -110,8 +110,24 @@ To run the deterministic test suite (no models, keys or index needed):
 py -m uv run pytest
 ```
 
-Docker, CI and observability are in [docs/development.md](docs/development.md); the
-evaluation commands are in [docs/evaluation.md](docs/evaluation.md#commands).
+**Docker (optional, CPU).** With Docker Desktop running, Ollama with `qwen3:4b` on the
+host and the index built as above:
+
+```powershell
+docker compose up --build -d          # http://127.0.0.1:8000; first start downloads ~7.7 GB of models
+docker compose down
+py -m uv run python scripts/docker_smoke.py                         # container smoke test (no models)
+powershell -ExecutionPolicy Bypass -File scripts\docker-e2e.ps1     # one real question through the container
+```
+
+**CI.** Every pull request runs ruff, mypy, the blocking security and verification gate,
+the full deterministic suite, a Docker build (not pushed) and the container smoke test.
+None of these calls a model, so they do not show answer quality. There is no deployment
+stage.
+
+Docker details, what each test proves, troubleshooting, CI and observability are in
+[docs/development.md](docs/development.md); the evaluation commands are in
+[docs/evaluation.md](docs/evaluation.md#commands).
 
 ## How answers work
 
@@ -216,7 +232,8 @@ they check the pipeline's rules, not model quality. Release results are in
 - **Local model behaviour.** qwen3:4b varies between runs, can produce invalid outputs
   (2/11 in the last run), and is slow (1–5 minutes per answer).
 - **Resources.** On a 16 GB laptop, free RAM fell to about 115 MB during evaluations; the
-  demo needs about 8 GB free. The Docker image was built in CI but not run end to end.
+  demo needs about 8 GB free. The Docker deployment (CPU only) was verified end to end with
+  a single question, not evaluated.
 - **Not legal advice.** Only the texts published in the Official Journal of the European
   Union are authentic.
 
@@ -230,7 +247,7 @@ The full list, including what would complete the original goals, is in
 | [RELEASE.md](RELEASE.md) | 0.1.0 status: feature table, verified results with definitions, live smoke test, adversarial table, known limitations |
 | [docs/architecture.md](docs/architecture.md) | providers, agent graph, verification and refusal policy, ingestion data contract, retrieval |
 | [docs/evaluation.md](docs/evaluation.md) | question sets, commands, metric definitions, retrieval benchmark, judge calibration, model-quality gate |
-| [docs/development.md](docs/development.md) | tests and opt-in suites, CI, Docker, MLflow and Langfuse, rebuilding the corpus |
+| [docs/development.md](docs/development.md) | tests and opt-in suites, CI, Docker (Compose, smoke and end-to-end tests), MLflow and Langfuse, rebuilding the corpus |
 | [eval/results/](eval/results/) | the detailed evaluation reports |
 
 ## License

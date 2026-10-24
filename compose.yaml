@@ -1,0 +1,67 @@
+# CiteShield in Docker with the local Ollama demo settings (docs/development.md#docker).
+#
+#   docker compose up --build            # API on http://127.0.0.1:8000, Ollama on the host
+#   docker compose down                  # stop and remove the container (volumes are kept)
+#
+# Like scripts/start-demo.ps1, this always uses the local Ollama provider, so it never calls
+# a paid API whatever .env contains. Prerequisites: the retrieval index in ./data/index
+# (py -m uv run citeshield-index) and Ollama with qwen3:4b. The first start downloads about
+# 7.7 GB of Hugging Face models into the citeshield-models volume.
+#
+# Ollama on the host (default): Docker Desktop routes host.docker.internal to the host's
+# loopback, so Ollama keeps listening on 127.0.0.1 only. On Linux Docker Engine,
+# host-gateway is the bridge address, which an Ollama bound to 127.0.0.1 does not answer;
+# use the opt-in container below instead of binding Ollama to 0.0.0.0.
+#
+# Ollama in a container (opt-in, CPU only, ~2.5 GB model download into a volume):
+#   $env:CITESHIELD_DOCKER_OLLAMA_URL = "http://ollama:11434"
+#   docker compose --profile ollama up -d ollama
+#   docker compose exec ollama ollama pull qwen3:4b
+#   docker compose --profile ollama up --build
+# Its port is not published: only the api container reaches it, on the compose network.
+
+name: citeshield
+
+services:
+  api:
+    build: .
+    image: citeshield:local
+    ports:
+      # Loopback only. Change the host side with CITESHIELD_PORT; the container uses 8000.
+      - "127.0.0.1:${CITESHIELD_PORT:-8000}:8000"
+    env_file:
+      # Optional: e.g. LANGFUSE_* keys. Values set under `environment` below take precedence.
+      - path: .env
+        required: false
+    environment:
+      CITESHIELD_LLM__PROVIDER: ollama
+      CITESHIELD_LLM__OLLAMA_BASE_URL: ${CITESHIELD_DOCKER_OLLAMA_URL:-http://host.docker.internal:11434}
+      CITESHIELD_LLM__OLLAMA_MODEL: qwen3:4b
+      # The memory-saving settings of scripts/start-demo.ps1 (the evaluated configuration).
+      CITESHIELD_LLM__OLLAMA_NUM_CTX: "24576"
+      CITESHIELD_LLM__OLLAMA_NUM_PREDICT: "8192"
+      CITESHIELD_RETRIEVER__EMBED_DEVICE: cpu
+      CITESHIELD_RETRIEVER__RERANK_DEVICE: cpu
+      CITESHIELD_RETRIEVER__EMBED_DTYPE: bfloat16
+      CITESHIELD_RETRIEVER__RERANK_BATCH_SIZE: "8"
+      CITESHIELD_VERIFIER__BATCH_SIZE: "4"
+    extra_hosts:
+      # Docker Desktop provides this name already; Linux Docker Engine needs the mapping.
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./data/index:/app/data/index
+      - citeshield-models:/models
+    restart: "no"
+
+  ollama:
+    profiles: ["ollama"]
+    image: ollama/ollama:0.40.10
+    volumes:
+      - ollama-models:/root/.ollama
+    restart: "no"
+
+volumes:
+  citeshield-models:
+    name: citeshield-models
+  ollama-models:
+    name: citeshield-ollama-models

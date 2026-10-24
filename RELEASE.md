@@ -63,7 +63,7 @@ Key design decisions:
 | Defense ablations (6 profiles) | **partial**: 2 of 6 complete, 1 partial, 3 not run |
 | MLflow evaluation tracking | **implemented** (optional); verified by logging stored runs to a local store |
 | Langfuse tracing | **implemented** (optional); unit-tested against a fake client, not run against a live Langfuse server |
-| Docker image | **implemented**; built in CI; not built or run on the laptop (Docker Desktop not started, to save memory) |
+| Docker image, Compose, container tests | **implemented**; CI builds the image and runs a container smoke test (no models); one real question answered end to end through the container on the laptop (below) |
 | Public demo deployment | **not implemented** (out of scope) |
 
 ## Install and run (Windows, PowerShell)
@@ -97,12 +97,12 @@ manifest's corpus hash matches `chunks.jsonl`; the retriever refuses a mismatche
 
 The walkthrough and the example questions are in the README.
 
-Docker alternative (CPU; index and model cache mounted; see the README for Ollama on the
-host):
+Docker alternative (CPU; index and model cache mounted; Ollama on the host; details in
+[docs/development.md](docs/development.md#docker-cpu)):
 
-```bash
-docker build -t citeshield .
-docker run --rm -p 127.0.0.1:8000:8000 -v ./data/index:/app/data/index -v citeshield-models:/models --env-file .env citeshield
+```powershell
+docker compose up --build -d
+docker compose down
 ```
 
 ## Tests and deterministic evaluation
@@ -131,7 +131,8 @@ and verification gate covers:
 - nonexistent provision references;
 - the web API.
 
-CI then runs the full suite and the Docker image build. These tests check the pipeline's
+CI then runs the full suite, builds the Docker image (not pushed) and runs a container
+smoke test against it (no models, no LLM). These tests check the pipeline's
 rules with scripted models. They do **not** measure a model's faithfulness on new
 questions.
 
@@ -199,6 +200,21 @@ held-out half without error, but the feasible intervals are wide.
 This exercised the browser page, `/health` (provider `ollama`, model present, not paid),
 streaming `/ask` and the verifier with the clause check enabled. The claim had a single
 clause, so the clause split was not exercised live.
+
+**Docker end-to-end test** (2026-10-24, one question, `scripts/docker-e2e.ps1` on the
+laptop: Docker Desktop 29.9.1 on WSL 2 with an 8 GB VM, retrieval and NLI on CPU in the
+container, Ollama 0.40.10 with qwen3:4b on the host):
+
+- the container was ready in about 2–3 minutes, including the first download of the
+  models into the volume (7.7 GB);
+- it reached the host's Ollama on 127.0.0.1 through `host.docker.internal`;
+- the same question (with "under the GDPR" appended) was **answered** in 214 s, with one
+  draft rejected by validation and repaired;
+- the final payload was valid, and its one claim cites GDPR Art. 33(1) with a verbatim
+  quote containing "not later than 72 hours".
+
+This verifies the packaging, model loading, Ollama connectivity, SSE and the answer schema
+in the container. It is one nondeterministic run, not a quality measurement.
 
 **LLM judge** (`eval/results/judge_calibration.md`). qwen3:4b missed the target (kappa ≥ 0.7
 with the lower 95% bound ≥ 0.7, on ≥ 20 held-out pairs) on every answer grade:
@@ -313,7 +329,9 @@ unfinished.
 
 - On a 16 GB laptop, free RAM fell to 244 MB and 115 MB during evaluations. The demo needs
   about 8 GB free and runs one question at a time.
-- The Docker image was not run end to end.
+- The Docker deployment was verified end to end with one question on 2026-10-24 (below the
+  model-quality bar of an evaluation: a single nondeterministic run). The container runs
+  the retrieval and NLI models on CPU only.
 
 ## What would complete the original goals
 
