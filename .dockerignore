@@ -1,17 +1,12 @@
-.git
-.github
-.venv
-.env
+# Allowlist: the build context holds only what the Dockerfile copies. Everything else
+# (.env, .git, .venv, data/index, data/raw, model caches, eval runs, tests) stays out.
+*
+!pyproject.toml
+!uv.lock
+!README.md
+!src/
+!data/corpus_manifest.yaml
+!data/processed/
+
 **/__pycache__
 **/*.pyc
-.mypy_cache
-.ruff_cache
-.pytest_cache
-data/raw
-data/index
-data/quarantine
-eval/runs
-mlruns
-mlartifacts
-qdrant_storage
-tests

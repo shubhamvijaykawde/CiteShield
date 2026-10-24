@@ -13,9 +13,15 @@ on:
 permissions:
   contents: read
 
+# A newer push to the same pull request cancels its older run; runs on main always finish.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   lint-and-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -39,15 +45,24 @@ jobs:
         run: uv run pytest
 
   docker-build:
-    # Builds the API image (CPU torch) to keep the Dockerfile working; nothing is pushed or run.
+    # Builds the API image (CPU torch, nothing is pushed) and runs it: scripts/docker_smoke.py
+    # starts the container without index, models or LLM and checks liveness, the honest
+    # not-ready report, the UI and OpenAPI, the non-root user and that no .env or index is
+    # baked in. Answer quality is not tested here (no models, no LLM).
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+      - name: Validate compose.yaml
+        run: docker compose config --quiet
       - uses: docker/setup-buildx-action@v3
       - uses: docker/build-push-action@v6
         with:
           context: .
           push: false
+          load: true
           tags: citeshield:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - name: Container smoke test
+        run: python3 scripts/docker_smoke.py --image citeshield:ci --skip-build
